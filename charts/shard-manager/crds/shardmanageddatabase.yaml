@@ -1,0 +1,167 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: shardmanageddatabases.resharder.io
+  labels:
+    app.kubernetes.io/name: shard-manager
+    app.kubernetes.io/part-of: resharder
+  annotations:
+    controller-gen.kubebuilder.io/version: manual
+spec:
+  group: resharder.io
+  names:
+    kind: ShardManagedDatabase
+    listKind: ShardManagedDatabaseList
+    plural: shardmanageddatabases
+    singular: shardmanageddatabase
+    shortNames:
+      - smd
+      - smdb
+    categories:
+      - resharder
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: >-
+            ShardManagedDatabase declares a set of logical PostgreSQL databases
+            (shards) to be dynamically distributed across CloudNativePG clusters
+            by the ReSharder operator.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - maxShardSize
+                - initialStorageSize
+                - shards
+              properties:
+                maxShardSize:
+                  type: string
+                  pattern: '^\d+(Ki|Mi|Gi|Ti)$'
+                  description: >-
+                    Disk-usage threshold per CNPG instance that triggers a shard
+                    split. Uses Kubernetes resource quantity notation (e.g. "50Gi").
+                  example: "50Gi"
+                initialStorageSize:
+                  type: string
+                  pattern: '^\d+(Ki|Mi|Gi|Ti)$'
+                  description: >-
+                    Initial PVC size allocated for every new CNPG cluster instance
+                    created by the operator. Uses Kubernetes resource quantity
+                    notation (e.g. "10Gi").
+                  example: "10Gi"
+                shards:
+                  type: array
+                  minItems: 1
+                  description: >-
+                    Full list of logical database (shard) names to be managed.
+                    Each name becomes a physical PostgreSQL database inside one of
+                    the CNPG instances.
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 63
+                    pattern: '^[a-z_][a-z0-9_]*$'
+                  example:
+                    - s1
+                    - s2
+                    - s3
+                    - s4
+                dependentDeployments:
+                  type: array
+                  default: []
+                  description: >-
+                    Names of Kubernetes Deployments that consume shard connections.
+                    The operator will manage ConfigMap-based topology updates so
+                    these workloads can react to shard migrations without restarts.
+                  items:
+                    type: string
+                    minLength: 1
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum:
+                    - Idle
+                    - Migrating
+                    - Cleaning
+                  default: Idle
+                  description: >-
+                    Current lifecycle phase of the operator for this resource.
+                    "Idle" — no migration in progress.
+                    "Migrating" — shard move via logical replication is underway.
+                    "Cleaning" — waiting for freed disk space after DROP DATABASE.
+                shardMapping:
+                  type: object
+                  description: >-
+                    Point-in-time mapping of each shard name to the CNPG cluster
+                    instance that physically hosts it.
+                    Key = shard (database) name, Value = CNPG Cluster CR name.
+                  additionalProperties:
+                    type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                  description: >-
+                    The metadata.generation observed by the operator during the
+                    last successful reconciliation.
+                conditions:
+                  type: array
+                  description: >-
+                    Standard Kubernetes conditions for surfacing detailed status.
+                  items:
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - lastTransitionTime
+                      - reason
+                      - message
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                        maxLength: 256
+                      message:
+                        type: string
+                        maxLength: 32768
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+          description: Current operator phase
+        - name: Shards
+          type: integer
+          jsonPath: .spec.shards
+          description: Total number of declared shards
+          priority: 1
+        - name: Max Size
+          type: string
+          jsonPath: .spec.maxShardSize
+          description: PVC usage threshold for splitting
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

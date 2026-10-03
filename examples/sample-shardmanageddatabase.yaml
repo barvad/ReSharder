@@ -1,0 +1,30 @@
+apiVersion: resharder.io/v1alpha1
+kind: ShardManagedDatabase
+metadata:
+  name: my-app-db
+  namespace: default
+spec:
+  # Disk-usage threshold — when a CNPG instance approaches this limit,
+  # the operator splits shards across a new instance.
+  maxShardSize: "50Gi"
+
+  # Every new CNPG cluster starts with this PVC size.
+  initialStorageSize: "10Gi"
+
+  # Logical databases (shards) managed by the operator.
+  # All are initially placed on a single CNPG instance.
+  shards:
+    - s1
+    - s2
+    - s3
+    - s4
+    - s5
+    - s6
+    - s7
+    - s8
+
+  # Application Deployments that need shard connection topology.
+  # The operator maintains a ConfigMap (app-shard-topology) consumed by these.
+  dependentDeployments:
+    - my-backend-api
+    - my-worker

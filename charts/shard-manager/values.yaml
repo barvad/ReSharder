@@ -1,0 +1,6 @@
+# Default values for shard-manager.
+# This is a YAML-formatted file.
+
+# -- Whether to install the ShardManagedDatabase CRD.
+# Set to false if CRDs are managed externally (e.g. via CI or GitOps).
+installCRDs: true

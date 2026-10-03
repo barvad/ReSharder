@@ -1,0 +1,31 @@
+=== ReSharder — Shard Manager ===
+
+The ShardManagedDatabase CRD has been installed.
+
+To verify the CRD is available:
+
+  kubectl get crd shardmanageddatabases.resharder.io
+
+Create your first managed shard set:
+
+  cat <<EOF | kubectl apply -f -
+  apiVersion: resharder.io/v1alpha1
+  kind: ShardManagedDatabase
+  metadata:
+    name: my-app-db
+  spec:
+    maxShardSize: "50Gi"
+    initialStorageSize: "10Gi"
+    shards:
+      - s1
+      - s2
+      - s3
+      - s4
+    dependentDeployments:
+      - my-app
+  EOF
+
+Check the resource status:
+
+  kubectl get shardmanageddatabases
+  kubectl get smd  # short name
