@@ -10,9 +10,7 @@ RUN dotnet publish -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app
 
-RUN addgroup --gid 1654 appgroup \
-    && adduser --uid 1654 --gid 1654 --disabled-password --gecos "" appuser
-USER appuser
+USER app
 
 COPY --from=build /app .
 
