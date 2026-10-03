@@ -4,6 +4,7 @@ using KubeOps.Abstractions.Reconciliation.Finalizer;
 using KubeOps.KubernetesClient;
 using Microsoft.Extensions.Logging;
 using ReSharder.Operator.Entities;
+using ReSharder.Operator.Services;
 
 namespace ReSharder.Operator.Finalizer;
 
@@ -14,10 +15,11 @@ namespace ReSharder.Operator.Finalizer;
 /// </summary>
 public sealed class ShardManagedDatabaseFinalizer(
     IKubernetesClient client,
+    CnpgClusterManager cnpg,
     ILogger<ShardManagedDatabaseFinalizer> logger)
     : IEntityFinalizer<V1Alpha1ShardManagedDatabase>
 {
-    private const string TopologyConfigMapName = "app-shard-topology";
+    private const string TopologyConfigMapPrefix = "app-shard-topology";
 
     public async Task<ReconciliationResult<V1Alpha1ShardManagedDatabase>> FinalizeAsync(
         V1Alpha1ShardManagedDatabase entity,
@@ -30,17 +32,14 @@ public sealed class ShardManagedDatabaseFinalizer(
             ns, name);
 
         // 1. Delete owned CNPG Cluster CRs.
-        //    Instances are tracked in status.shardMapping (values = instance names).
         var instanceNames = entity.Status.ShardMapping.Values.Distinct().ToList();
         foreach (var instanceName in instanceNames)
         {
-            logger.LogInformation("Marking CNPG Cluster {Instance} for deletion.", instanceName);
-            // TODO (Iteration 3): Delete the actual CNPG Cluster CR.
-            //   await client.DeleteAsync<CnpgCluster>(instanceName, ns, cancellationToken);
+            await cnpg.DeleteClusterAsync(instanceName, ns, cancellationToken);
         }
 
         // 2. Delete the topology ConfigMap.
-        var configMapName = $"{TopologyConfigMapName}-{name}";
+        var configMapName = $"{TopologyConfigMapPrefix}-{name}";
         try
         {
             var existing = await client.GetAsync<V1ConfigMap>(configMapName, ns, cancellationToken);
