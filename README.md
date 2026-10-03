@@ -8,28 +8,45 @@ ReSharder automates horizontal scaling of PostgreSQL databases in on-premise Kub
 
 1. **Deploy** the operator and create a single `ShardManagedDatabase` custom resource listing your logical shards.
 2. **All shards start** on one CNPG cluster instance sharing a single PVC.
-3. **When the disk fills up** (reaches `maxShardSize`), the operator splits the instance in half — moving half the shards to a brand-new CNPG cluster via logical replication.
-4. **If only one shard remains** on an instance, vertical scaling kicks in — the PVC is expanded instead.
+3. **When the disk fills up** (reaches `maxShardSize`), the operator splits the instance in half - moving half the shards to a brand-new CNPG cluster via logical replication.
+4. **If only one shard remains** on an instance, vertical scaling kicks in - the PVC is expanded instead.
 5. **Traffic switching** is zero-downtime: a `ConfigMap`-based topology map lets applications react to migrations without pod restarts.
 
 ## Repository Structure
 
 ```
 ReSharder/
+├── src/
+│   └── ReSharder.Operator/
+│       ├── ReSharder.Operator.csproj
+│       ├── Program.cs
+│       ├── Dockerfile
+│       ├── Entities/
+│       │   └── V1Alpha1ShardManagedDatabase.cs
+│       ├── Controller/
+│       │   └── ShardManagedDatabaseController.cs
+│       └── Finalizer/
+│           └── ShardManagedDatabaseFinalizer.cs
 ├── charts/
-│   └── shard-manager/          # Helm chart (CRD + future operator manifests)
+│   └── shard-manager/
 │       ├── Chart.yaml
 │       ├── values.yaml
 │       ├── crds/
-│       │   └── shardmanageddatabase.yaml   # ShardManagedDatabase CRD
+│       │   └── shardmanageddatabase.yaml
 │       └── templates/
 │           ├── _helpers.tpl
+│           ├── deployment.yaml
+│           ├── serviceaccount.yaml
+│           ├── clusterrole.yaml
+│           ├── clusterrolebinding.yaml
 │           └── NOTES.txt
 ├── examples/
-│   └── sample-shardmanageddatabase.yaml    # Example CR
+│   └── sample-shardmanageddatabase.yaml
 ├── .github/
 │   └── workflows/
-│       └── release-charts.yml              # OCI Helm publish on tag push
+│       ├── release-charts.yml
+│       └── build-operator.yml
+├── ReSharder.sln
 ├── LICENSE
 └── README.md
 ```
@@ -58,9 +75,18 @@ spec:
 | Field               | Type                | Description                                              |
 |---------------------|---------------------|----------------------------------------------------------|
 | `phase`             | `Idle \| Migrating \| Cleaning` | Current operator lifecycle phase              |
-| `shardMapping`      | `map[string]string` | Shard name → CNPG cluster instance name                  |
+| `shardMapping`      | `map[string]string` | Shard name -> CNPG cluster instance name                 |
 | `observedGeneration`| `int64`             | Last reconciled `metadata.generation`                    |
 | `conditions`        | `[]Condition`       | Standard Kubernetes conditions                           |
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Operator runtime | .NET 9, [KubeOps](https://github.com/dotnet/dotnet-operator-sdk) v13.3 |
+| Target databases | PostgreSQL via [CloudNativePG](https://cloudnative-pg.io/) |
+| Packaging | Helm 3 (OCI), Docker |
+| CI/CD | GitHub Actions |
 
 ## Installation
 
@@ -80,36 +106,58 @@ cd ReSharder
 helm install shard-manager ./charts/shard-manager
 ```
 
-### Verify the CRD
+### Verify
 
 ```bash
 kubectl get crd shardmanageddatabases.resharder.io
 kubectl get smd   # short name
 ```
 
-## Releasing a New Chart Version
+## Development
 
-Push a semver tag to trigger the CI pipeline:
+### Prerequisites
+
+- .NET 9 SDK
+- Docker
+- Helm 3
+- A Kubernetes cluster with CloudNativePG installed
+
+### Build
+
+```bash
+dotnet build
+```
+
+### Run locally (connected to a cluster)
+
+```bash
+dotnet run --project src/ReSharder.Operator
+```
+
+In DEBUG mode the operator auto-installs CRDs into the cluster and removes them on shutdown.
+
+## Releasing
+
+Push a semver tag to trigger both CI pipelines:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The GitHub Actions workflow will:
-1. Lint the chart
-2. Package it with the tag version
-3. Push to `oci://ghcr.io/barvad/charts/shard-manager`
+This will:
+1. Build and push the operator image to `ghcr.io/barvad/resharder-operator`
+2. Package and push the Helm chart to `oci://ghcr.io/barvad/charts/shard-manager`
 
 ## Roadmap
 
-- [x] **Iteration 1** — CRD definition, Helm chart, OCI publish pipeline
-- [ ] **Iteration 2** — .NET operator scaffold, reconciliation loop, CNPG cluster creation
-- [ ] **Iteration 3** — PVC monitoring, split trigger logic
-- [ ] **Iteration 4** — Logical replication engine (PUBLICATION / SUBSCRIPTION)
-- [ ] **Iteration 5** — Traffic management (ConfigMap topology, zero-downtime cutover)
-- [ ] **Iteration 6** — Vertical scaling fallback (single-shard PVC resize)
-- [ ] **Iteration 7** — Cleanup phase, end-to-end tests
+- [x] **Iteration 1** - CRD definition, Helm chart, OCI publish pipeline
+- [x] **Iteration 2** - .NET operator scaffold, reconciliation loop, CNPG cluster creation
+- [ ] **Iteration 3** - PVC monitoring, split trigger logic
+- [ ] **Iteration 4** - Logical replication engine (PUBLICATION / SUBSCRIPTION)
+- [ ] **Iteration 5** - Traffic management (ConfigMap topology, zero-downtime cutover)
+- [ ] **Iteration 6** - Vertical scaling fallback (single-shard PVC resize)
+- [ ] **Iteration 7** - Cleanup phase, end-to-end tests
 
 ## License
 

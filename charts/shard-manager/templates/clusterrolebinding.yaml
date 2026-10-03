@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "shard-manager.fullname" . }}
+  labels:
+    {{- include "shard-manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "shard-manager.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "shard-manager.fullname" . }}
+    namespace: {{ .Release.Namespace }}

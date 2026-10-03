@@ -1,6 +1,36 @@
 # Default values for shard-manager.
-# This is a YAML-formatted file.
 
 # -- Whether to install the ShardManagedDatabase CRD.
 # Set to false if CRDs are managed externally (e.g. via CI or GitOps).
 installCRDs: true
+
+operator:
+  # -- Number of operator pod replicas. Only one is active (leader election).
+  replicas: 1
+
+  image:
+    # -- Container image repository.
+    repository: ghcr.io/barvad/resharder-operator
+    # -- Image tag. Defaults to Chart appVersion.
+    tag: ""
+    # -- Image pull policy.
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  # -- Extra environment variables for the operator container.
+  extraEnv: []
+  #  - name: LOG_LEVEL
+  #    value: Debug
+
+  # -- Node selector for operator pods.
+  nodeSelector: {}
+
+  # -- Tolerations for operator pods.
+  tolerations: []

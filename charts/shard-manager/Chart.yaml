@@ -1,7 +1,7 @@
 apiVersion: v2
 name: shard-manager
 description: >-
-  ReSharder a dynamic PostgreSQL shard management operator for Kubernetes.
+  ReSharder - dynamic PostgreSQL shard management operator for Kubernetes.
   Manages ShardManagedDatabase custom resources and automates shard splitting
   across CloudNativePG clusters.
 type: application
