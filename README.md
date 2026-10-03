@@ -194,7 +194,7 @@ Applications mount this ConfigMap (or watch it via Spring Cloud Kubernetes, Kube
   kubectl apply --server-side -f \
     https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.25.0.yaml
   ```
-- Helm 3 & .NET 9 SDK
+- Helm 3 & .NET 10 SDK
 
 ### 2. Install Operator via Helm
 
