@@ -20,6 +20,9 @@ spec:
       serviceAccountName: {{ include "shard-manager.fullname" . }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -28,7 +31,7 @@ spec:
           imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             capabilities:
               drop: ["ALL"]
           resources:

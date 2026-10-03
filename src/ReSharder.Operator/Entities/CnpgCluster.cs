@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using k8s;
 using k8s.Models;
+using KubeOps.Abstractions.Entities;
 
 namespace ReSharder.Operator.Entities;
 
@@ -9,6 +10,11 @@ namespace ReSharder.Operator.Entities;
 /// Only the fields managed by ReSharder are modelled; everything else passes
 /// through as unstructured JSON via the <c>additionalProperties</c> on the CRD.
 /// </summary>
+[KubernetesEntity(
+    Group = "postgresql.cnpg.io",
+    ApiVersion = "v1",
+    Kind = "Cluster",
+    PluralName = "clusters")]
 public class CnpgCluster : IKubernetesObject<V1ObjectMeta>
 {
     [JsonPropertyName("apiVersion")]

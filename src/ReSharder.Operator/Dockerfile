@@ -10,7 +10,7 @@ RUN dotnet publish -c Release -o /app
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-USER app
+USER 1654
 
 COPY --from=build /app .
 
