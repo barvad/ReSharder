@@ -17,6 +17,9 @@ builder.Logging
 
 builder.Services.AddSingleton<CnpgClusterManager>();
 builder.Services.AddSingleton<PvcMonitor>();
+builder.Services.AddSingleton<PostgresExecutor>();
+builder.Services.AddSingleton<LogicalReplicationManager>();
+builder.Services.AddSingleton<MigrationOrchestrator>();
 
 builder.Services
     .AddKubernetesOperator()

@@ -4,7 +4,7 @@ metadata:
   name: my-app-db
   namespace: default
 spec:
-  # Disk-usage threshold — when a CNPG instance approaches this limit,
+  # Disk-usage threshold -- when a CNPG instance approaches this limit,
   # the operator splits shards across a new instance.
   maxShardSize: "50Gi"
 
@@ -28,3 +28,17 @@ spec:
   dependentDeployments:
     - my-backend-api
     - my-worker
+
+  # Replication lag threshold (bytes). When lag drops below this,
+  # the operator sets shards to Maintenance and drains writes.
+  # Default: 1048576 (1 MiB).
+  # lagThresholdBytes: 1048576
+
+  # Seconds to wait after Maintenance before verifying zero lag.
+  # Default: 5.
+  # drainWaitSeconds: 5
+
+  # Maximum seconds to wait in Cleaning phase for disk space to drop
+  # below maxShardSize after dropping source databases.
+  # Default: 120.
+  # cleaningTimeoutSeconds: 120

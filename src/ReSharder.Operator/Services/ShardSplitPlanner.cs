@@ -4,7 +4,7 @@ namespace ReSharder.Operator.Services;
 
 /// <summary>
 /// Pure logic for deciding which shards to move during a split.
-/// Stateless — all state comes in via parameters.
+/// Stateless -- all state comes in via parameters.
 /// </summary>
 public static class ShardSplitPlanner
 {

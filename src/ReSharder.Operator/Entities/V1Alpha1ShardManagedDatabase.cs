@@ -17,70 +17,114 @@ public partial class V1Alpha1ShardManagedDatabase
     : CustomKubernetesEntity<V1Alpha1ShardManagedDatabase.V1Alpha1Spec,
                              V1Alpha1ShardManagedDatabase.V1Alpha1Status>
 {
-    /// <summary>
-    /// Desired state for a ShardManagedDatabase resource.
-    /// </summary>
     public class V1Alpha1Spec
     {
-        /// <summary>
-        /// Disk-usage threshold per CNPG instance that triggers a shard split.
-        /// Uses Kubernetes resource quantity notation (e.g. "50Gi").
-        /// </summary>
         [JsonPropertyName("maxShardSize")]
         public string MaxShardSize { get; set; } = string.Empty;
 
-        /// <summary>
-        /// Initial PVC size allocated for every new CNPG cluster instance
-        /// created by the operator.
-        /// </summary>
         [JsonPropertyName("initialStorageSize")]
         public string InitialStorageSize { get; set; } = string.Empty;
 
-        /// <summary>
-        /// Full list of logical database (shard) names to be managed.
-        /// Each name becomes a physical PostgreSQL database inside one of
-        /// the CNPG instances.
-        /// </summary>
         [JsonPropertyName("shards")]
         public List<string> Shards { get; set; } = [];
 
-        /// <summary>
-        /// Names of Kubernetes Deployments that consume shard connections.
-        /// The operator will manage ConfigMap-based topology updates so
-        /// these workloads can react to shard migrations without restarts.
-        /// </summary>
         [JsonPropertyName("dependentDeployments")]
         public List<string> DependentDeployments { get; set; } = [];
+
+        /// <summary>
+        /// Replication lag threshold in bytes. When all migrating shards reach
+        /// lag below this value, the operator switches them to Maintenance
+        /// (stops writes) and waits for lag to reach exactly 0.
+        /// Default: 1048576 (1 MiB).
+        /// </summary>
+        [JsonPropertyName("lagThresholdBytes")]
+        public long LagThresholdBytes { get; set; } = 1_048_576;
+
+        /// <summary>
+        /// How many seconds to wait after setting shards to Maintenance before
+        /// checking for final zero-lag. Gives in-flight writes time to flush.
+        /// Default: 5 seconds.
+        /// </summary>
+        [JsonPropertyName("drainWaitSeconds")]
+        public int DrainWaitSeconds { get; set; } = 5;
+
+        /// <summary>
+        /// Maximum seconds to wait in Cleaning phase for disk space to drop below maxShardSize
+        /// after dropping source databases.
+        /// Default: 120 seconds.
+        /// </summary>
+        [JsonPropertyName("cleaningTimeoutSeconds")]
+        public int CleaningTimeoutSeconds { get; set; } = 120;
     }
 
-    /// <summary>
-    /// Observed state managed by the operator.
-    /// </summary>
     public class V1Alpha1Status
     {
-        /// <summary>
-        /// Current lifecycle phase of the operator for this resource.
-        /// </summary>
         [JsonPropertyName("phase")]
         public string Phase { get; set; } = PhaseIdle;
 
-        /// <summary>
-        /// Point-in-time mapping of each shard name to the CNPG cluster
-        /// instance that physically hosts it.
-        /// Key = shard (database) name, Value = CNPG Cluster CR name.
-        /// </summary>
         [JsonPropertyName("shardMapping")]
         public Dictionary<string, string> ShardMapping { get; set; } = new();
 
-        /// <summary>
-        /// The metadata.generation observed by the operator during the
-        /// last successful reconciliation.
-        /// </summary>
         [JsonPropertyName("observedGeneration")]
         public long? ObservedGeneration { get; set; }
+
+        [JsonPropertyName("activeMigration")]
+        public ActiveMigrationState? ActiveMigration { get; set; }
+
+        [JsonPropertyName("cleaning")]
+        public CleaningState? Cleaning { get; set; }
 
         public const string PhaseIdle = "Idle";
         public const string PhaseMigrating = "Migrating";
         public const string PhaseCleaning = "Cleaning";
     }
+}
+
+/// <summary>
+/// Persisted state for an active cleaning phase after shard migration,
+/// stored in the CR status to survive operator restarts.
+/// </summary>
+public class CleaningState
+{
+    [JsonPropertyName("instance")]
+    public string Instance { get; set; } = string.Empty;
+
+    [JsonPropertyName("startedAt")]
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Persisted state for an active shard migration, stored in the CR status.
+/// Allows the operator to resume migration after restarts.
+/// </summary>
+public class ActiveMigrationState
+{
+    [JsonPropertyName("step")]
+    public MigrationStep Step { get; set; } = MigrationStep.NotStarted;
+
+    [JsonPropertyName("sourceInstance")]
+    public string SourceInstance { get; set; } = string.Empty;
+
+    [JsonPropertyName("targetInstance")]
+    public string TargetInstance { get; set; } = string.Empty;
+
+    [JsonPropertyName("shardsInFlight")]
+    public List<string> ShardsInFlight { get; set; } = [];
+
+    /// <summary>
+    /// UTC timestamp when Maintenance was applied on the ConfigMap.
+    /// Used to enforce the drain wait before the final zero-lag check.
+    /// </summary>
+    [JsonPropertyName("maintenanceSetAt")]
+    public DateTime? MaintenanceSetAt { get; set; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum MigrationStep
+{
+    NotStarted,
+    Replicating,
+    Draining,
+    CaughtUp,
+    CutoverDone,
 }

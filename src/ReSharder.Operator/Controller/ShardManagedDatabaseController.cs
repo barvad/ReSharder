@@ -13,14 +13,16 @@ using Status = V1Alpha1ShardManagedDatabase.V1Alpha1Status;
 
 /// <summary>
 /// Main reconciliation controller for <see cref="V1Alpha1ShardManagedDatabase"/> resources.
-/// Implements the core lifecycle: initial provisioning, PVC monitoring, split/scale-up triggers.
+/// Implements the core lifecycle: provisioning, PVC monitoring, split/scale-up, migration.
 /// </summary>
 [EntityRbac(typeof(V1Alpha1ShardManagedDatabase), Verbs = RbacVerb.All)]
 [EntityRbac(typeof(V1ConfigMap), Verbs = RbacVerb.Get | RbacVerb.List | RbacVerb.Create | RbacVerb.Update | RbacVerb.Patch | RbacVerb.Delete)]
+[EntityRbac(typeof(V1Secret), Verbs = RbacVerb.Get | RbacVerb.List)]
 public sealed class ShardManagedDatabaseController(
     IKubernetesClient client,
     CnpgClusterManager cnpg,
     PvcMonitor pvcMonitor,
+    MigrationOrchestrator migrationOrchestrator,
     ILogger<ShardManagedDatabaseController> logger)
     : IEntityController<V1Alpha1ShardManagedDatabase>
 {
@@ -28,6 +30,8 @@ public sealed class ShardManagedDatabaseController(
     private const string DefaultInstancePrefix = "smd-instance";
 
     private static readonly TimeSpan RequeueInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan MigrationPollInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan CleaningPollInterval = TimeSpan.FromSeconds(10);
     private const string StorageScaleIncrement = "20Gi";
 
     public async Task<ReconciliationResult<V1Alpha1ShardManagedDatabase>> ReconcileAsync(
@@ -40,13 +44,25 @@ public sealed class ShardManagedDatabaseController(
             "Reconciling ShardManagedDatabase {Namespace}/{Name}, generation={Generation}, phase={Phase}.",
             ns, name, entity.Metadata.Generation, entity.Status.Phase);
 
-        // If a migration or cleanup is already in progress, don't interfere.
-        if (entity.Status.Phase is Status.PhaseMigrating or Status.PhaseCleaning)
+        // Handle active migration (Migrating phase).
+        if (entity.Status.Phase == Status.PhaseMigrating)
         {
-            logger.LogInformation("Phase is {Phase}, skipping reconciliation.", entity.Status.Phase);
+            entity = await HandleMigrationPhase(entity, cancellationToken);
+            entity = await client.UpdateStatusAsync(entity, cancellationToken);
             return ReconciliationResult<V1Alpha1ShardManagedDatabase>.Success(
-                entity, requeueAfter: RequeueInterval);
+                entity, requeueAfter: MigrationPollInterval);
         }
+
+        // Handle Cleaning phase -- wait for disk space to be freed.
+        if (entity.Status.Phase == Status.PhaseCleaning)
+        {
+            entity = await HandleCleaningPhase(entity, cancellationToken);
+            entity = await client.UpdateStatusAsync(entity, cancellationToken);
+            return ReconciliationResult<V1Alpha1ShardManagedDatabase>.Success(
+                entity, requeueAfter: CleaningPollInterval);
+        }
+
+        // -- Idle phase --
 
         // Step 1: Ensure the initial shard mapping and CNPG cluster exist.
         if (entity.Status.ShardMapping.Count == 0)
@@ -82,9 +98,129 @@ public sealed class ShardManagedDatabaseController(
             ReconciliationResult<V1Alpha1ShardManagedDatabase>.Success(entity));
     }
 
-    /// <summary>
-    /// Assigns all declared shards to the first CNPG instance.
-    /// </summary>
+    // -- Migration Phase --
+
+    private async Task<V1Alpha1ShardManagedDatabase> HandleMigrationPhase(
+        V1Alpha1ShardManagedDatabase entity,
+        CancellationToken ct)
+    {
+        var migration = entity.Status.ActiveMigration;
+        if (migration is null)
+        {
+            logger.LogWarning("Phase is Migrating but no ActiveMigration state. Resetting to Idle.");
+            entity.Status.Phase = Status.PhaseIdle;
+            return entity;
+        }
+
+        var plan = SplitPlan.Split(
+            migration.SourceInstance,
+            migration.TargetInstance,
+            [],
+            migration.ShardsInFlight);
+
+        // Wire up the topology status callback so the orchestrator can
+        // set shards to "Maintenance" without owning ConfigMap logic.
+        migrationOrchestrator.SetShardTopologyStatus = (shards, status, token) =>
+            UpdateShardTopologyStatus(entity, shards, status, token);
+
+        var sourceInstance = migration.SourceInstance;
+
+        var result = await migrationOrchestrator.ProcessMigrationStepAsync(entity, plan, ct);
+
+        if (result == MigrationStepResult.Completed)
+        {
+            logger.LogInformation(
+                "Migration completed. Transitioning to Cleaning phase for source instance {Instance}.",
+                sourceInstance);
+            entity.Status.Phase = Status.PhaseCleaning;
+            entity.Status.Cleaning = new CleaningState
+            {
+                Instance = sourceInstance,
+                StartedAt = DateTime.UtcNow,
+            };
+
+            // Restore all shards to Active with new connection info.
+            await EnsureTopologyConfigMap(entity, ct);
+        }
+
+        return entity;
+    }
+
+    // -- Cleaning Phase --
+
+    private async Task<V1Alpha1ShardManagedDatabase> HandleCleaningPhase(
+        V1Alpha1ShardManagedDatabase entity,
+        CancellationToken ct)
+    {
+        var cleaning = entity.Status.Cleaning;
+        if (cleaning is null || string.IsNullOrEmpty(cleaning.Instance))
+        {
+            logger.LogWarning("Phase is Cleaning but no Cleaning state found. Transitioning to Idle.");
+            entity.Status.Cleaning = null;
+            entity.Status.Phase = Status.PhaseIdle;
+            return entity;
+        }
+
+        var ns = entity.Namespace();
+        var maxBytes = CnpgClusterManager.ParseStorageToBytes(entity.Spec.MaxShardSize);
+        var usage = await pvcMonitor.GetCnpgInstanceUsageAsync(cleaning.Instance, ns, ct);
+
+        if (usage is null)
+        {
+            logger.LogWarning(
+                "Cleaning phase: could not fetch PVC usage for instance {Instance}. Will retry.",
+                cleaning.Instance);
+            return entity;
+        }
+
+        logger.LogInformation(
+            "Cleaning phase instance {Instance}: used={UsedMi}Mi, threshold={ThreshMi}Mi.",
+            cleaning.Instance,
+            usage.UsedBytes / (1024 * 1024),
+            maxBytes / (1024 * 1024));
+
+        if (usage.UsedBytes < maxBytes)
+        {
+            logger.LogInformation(
+                "Cleaning phase complete: instance {Instance} disk usage ({UsedMi}Mi) dropped below maxShardSize ({ThreshMi}Mi). Transitioning to Idle.",
+                cleaning.Instance,
+                usage.UsedBytes / (1024 * 1024),
+                maxBytes / (1024 * 1024));
+
+            entity.Status.Cleaning = null;
+            entity.Status.Phase = Status.PhaseIdle;
+            return entity;
+        }
+
+        var elapsed = DateTime.UtcNow - cleaning.StartedAt;
+        var timeout = TimeSpan.FromSeconds(entity.Spec.CleaningTimeoutSeconds);
+
+        if (elapsed >= timeout)
+        {
+            logger.LogWarning(
+                "Cleaning phase timed out after {Elapsed:F0}s (timeout {Timeout}s) for instance {Instance}. Disk used {UsedMi}Mi >= threshold {ThreshMi}Mi. Transitioning to Idle.",
+                elapsed.TotalSeconds,
+                timeout.TotalSeconds,
+                cleaning.Instance,
+                usage.UsedBytes / (1024 * 1024),
+                maxBytes / (1024 * 1024));
+
+            entity.Status.Cleaning = null;
+            entity.Status.Phase = Status.PhaseIdle;
+            return entity;
+        }
+
+        logger.LogInformation(
+            "Cleaning phase in progress for instance {Instance} ({Elapsed:F0}s/{Timeout:F0}s elapsed). Waiting for disk space to be reclaimed.",
+            cleaning.Instance,
+            elapsed.TotalSeconds,
+            timeout.TotalSeconds);
+
+        return entity;
+    }
+
+    // -- Initialization --
+
     private async Task<V1Alpha1ShardManagedDatabase> InitializeShardMapping(
         V1Alpha1ShardManagedDatabase entity,
         CancellationToken ct)
@@ -103,9 +239,6 @@ public sealed class ShardManagedDatabaseController(
         return await client.UpdateStatusAsync(entity, ct);
     }
 
-    /// <summary>
-    /// Ensures that a CNPG Cluster CR exists for every unique instance in the shard mapping.
-    /// </summary>
     private async Task EnsureCnpgClusters(
         V1Alpha1ShardManagedDatabase entity,
         CancellationToken ct)
@@ -120,8 +253,21 @@ public sealed class ShardManagedDatabaseController(
         }
     }
 
+    // -- Split / Scale-Up Trigger --
+
     /// <summary>
-    /// Checks PVC usage for every CNPG instance and triggers a split or scale-up if needed.
+    /// Checks PVC usage for every CNPG instance and triggers a split or scale-up
+    /// for the FIRST overloaded instance found.
+    /// <para>
+    /// Only one split/scale-up per reconciliation tick -- this is intentional:
+    /// <list type="bullet">
+    ///   <item>Avoids massive concurrent network and disk load.</item>
+    ///   <item>After this split completes (Migrating -> Cleaning -> Idle), the next
+    ///         tick will find the next overloaded instance and split that one.</item>
+    ///   <item>Each instance is checked independently -- instance-2 that was created
+    ///         by a previous split will be checked and split again if it overflows.</item>
+    /// </list>
+    /// </para>
     /// </summary>
     private async Task<V1Alpha1ShardManagedDatabase> CheckAndTriggerSplit(
         V1Alpha1ShardManagedDatabase entity,
@@ -166,10 +312,12 @@ public sealed class ShardManagedDatabaseController(
             {
                 case SplitAction.Split:
                     entity = await ExecuteSplitPlan(entity, plan, ct);
+                    // Return immediately -- one split at a time.
                     return entity;
 
                 case SplitAction.ScaleUp:
                     await ExecuteScaleUp(entity, plan, ct);
+                    // Return immediately -- one action at a time.
                     return entity;
             }
         }
@@ -177,10 +325,6 @@ public sealed class ShardManagedDatabaseController(
         return entity;
     }
 
-    /// <summary>
-    /// Executes a shard split: creates a new CNPG instance and transitions to Migrating phase.
-    /// The actual data migration (logical replication) will be handled in Iteration 4.
-    /// </summary>
     private async Task<V1Alpha1ShardManagedDatabase> ExecuteSplitPlan(
         V1Alpha1ShardManagedDatabase entity,
         SplitPlan plan,
@@ -204,27 +348,23 @@ public sealed class ShardManagedDatabaseController(
             entity.Status.ShardMapping[shard] = plan.TargetInstance!;
         }
 
-        // 3. Transition to Migrating phase.
-        //    Iteration 4 will add PUBLICATION/SUBSCRIPTION logical replication here.
-        //    For now, we update the mapping and mark the phase.
+        // 3. Initialize migration state and transition to Migrating phase.
+        entity.Status.ActiveMigration = new ActiveMigrationState
+        {
+            Step = MigrationStep.NotStarted,
+            SourceInstance = plan.SourceInstance,
+            TargetInstance = plan.TargetInstance!,
+            ShardsInFlight = plan.ShardsToMove.ToList(),
+        };
         entity.Status.Phase = Status.PhaseMigrating;
         entity = await client.UpdateStatusAsync(entity, ct);
 
         logger.LogInformation(
-            "Split planned. Phase set to Migrating. Shard mapping updated.");
-
-        // TODO (Iteration 4): Start logical replication for plan.ShardsToMove.
-        // TODO (Iteration 5): Traffic cutover via ConfigMap.
-        // For now, immediately transition back to Idle since no real migration happens yet.
-        entity.Status.Phase = Status.PhaseIdle;
-        entity = await client.UpdateStatusAsync(entity, ct);
+            "Split initiated. Phase set to Migrating. Next reconcile will start replication.");
 
         return entity;
     }
 
-    /// <summary>
-    /// Executes vertical scaling: increases PVC size for a single-shard instance.
-    /// </summary>
     private async Task ExecuteScaleUp(
         V1Alpha1ShardManagedDatabase entity,
         SplitPlan plan,
@@ -241,9 +381,44 @@ public sealed class ShardManagedDatabaseController(
         logger.LogInformation("Scale-up complete for instance {Instance}.", plan.SourceInstance);
     }
 
+    // -- Topology ConfigMap --
+
     /// <summary>
-    /// Creates or updates the topology ConfigMap consumed by application pods.
+    /// Sets the status of specific shards in the topology ConfigMap
+    /// (e.g. "Maintenance" to stop writes, "Active" to resume).
     /// </summary>
+    private async Task UpdateShardTopologyStatus(
+        V1Alpha1ShardManagedDatabase entity,
+        IReadOnlyList<string> shards,
+        string status,
+        CancellationToken ct)
+    {
+        var ns = entity.Namespace();
+        var configMapName = $"{TopologyConfigMapPrefix}-{entity.Name()}";
+
+        var existing = await client.GetAsync<V1ConfigMap>(configMapName, ns, ct);
+        if (existing?.Data is null) return;
+
+        var changed = false;
+        foreach (var shard in shards)
+        {
+            var key = $"{shard}.status";
+            if (existing.Data.TryGetValue(key, out var current) && current != status)
+            {
+                existing.Data[key] = status;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            logger.LogInformation(
+                "Setting shards [{Shards}] to '{Status}' in ConfigMap {Name}.",
+                string.Join(", ", shards), status, configMapName);
+            await client.UpdateAsync(existing, ct);
+        }
+    }
+
     private async Task EnsureTopologyConfigMap(
         V1Alpha1ShardManagedDatabase entity,
         CancellationToken ct)

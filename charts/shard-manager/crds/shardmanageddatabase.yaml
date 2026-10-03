@@ -87,6 +87,33 @@ spec:
                   items:
                     type: string
                     minLength: 1
+                lagThresholdBytes:
+                  type: integer
+                  format: int64
+                  default: 1048576
+                  description: >-
+                    Replication lag threshold in bytes. When all migrating shards
+                    reach lag below this value, the operator sets them to
+                    Maintenance (stops writes via ConfigMap) and waits for lag
+                    to reach exactly zero before cutover. Default: 1048576 (1 MiB).
+                drainWaitSeconds:
+                  type: integer
+                  format: int32
+                  default: 5
+                  minimum: 1
+                  description: >-
+                    Seconds to wait after setting shards to Maintenance before
+                    checking for final zero-lag. Gives in-flight writes time
+                    to flush through the replication pipeline. Default: 5.
+                cleaningTimeoutSeconds:
+                  type: integer
+                  format: int32
+                  default: 120
+                  minimum: 10
+                  description: >-
+                    Maximum seconds to wait in Cleaning phase for disk space
+                    to drop below maxShardSize after dropping source databases.
+                    Default: 120.
             status:
               type: object
               properties:
@@ -99,9 +126,9 @@ spec:
                   default: Idle
                   description: >-
                     Current lifecycle phase of the operator for this resource.
-                    "Idle" — no migration in progress.
-                    "Migrating" — shard move via logical replication is underway.
-                    "Cleaning" — waiting for freed disk space after DROP DATABASE.
+                    "Idle" -- no migration in progress.
+                    "Migrating" -- shard move via logical replication is underway.
+                    "Cleaning" -- waiting for freed disk space after DROP DATABASE.
                 shardMapping:
                   type: object
                   description: >-
@@ -116,6 +143,57 @@ spec:
                   description: >-
                     The metadata.generation observed by the operator during the
                     last successful reconciliation.
+                activeMigration:
+                  type: object
+                  description: >-
+                    Tracks the state of an in-progress shard migration via
+                    logical replication. Null when no migration is active.
+                    Persisted in status to survive operator restarts.
+                  properties:
+                    step:
+                      type: string
+                      enum:
+                        - NotStarted
+                        - Replicating
+                        - Draining
+                        - CaughtUp
+                        - CutoverDone
+                      description: >-
+                        Current step in the migration state machine.
+                        Replicating: waiting for lag < threshold.
+                        Draining: Maintenance set, waiting for lag = 0.
+                        CaughtUp: sequences synced, replication torn down.
+                        CutoverDone: source databases dropped.
+                    sourceInstance:
+                      type: string
+                      description: CNPG cluster instance shards are migrating from.
+                    targetInstance:
+                      type: string
+                      description: CNPG cluster instance shards are migrating to.
+                    shardsInFlight:
+                      type: array
+                      description: Shard names currently being migrated.
+                      items:
+                        type: string
+                    maintenanceSetAt:
+                      type: string
+                      format: date-time
+                      description: >-
+                        UTC timestamp when Maintenance was applied on the
+                        topology ConfigMap. Used to enforce drain wait.
+                cleaning:
+                  type: object
+                  description: >-
+                    Tracks the state of the Cleaning phase while waiting for
+                    disk space to be reclaimed after shard migration.
+                  properties:
+                    instance:
+                      type: string
+                      description: CNPG cluster instance being cleaned.
+                    startedAt:
+                      type: string
+                      format: date-time
+                      description: UTC timestamp when the Cleaning phase started.
                 conditions:
                   type: array
                   description: >-

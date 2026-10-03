@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "shard-manager.labels" . | nindent 4 }}
 rules:
-  # ShardManagedDatabase CRD — full access
+  # ShardManagedDatabase CRD -- full access
   - apiGroups: ["resharder.io"]
     resources: ["shardmanageddatabases"]
     verbs: ["*"]
@@ -13,22 +13,22 @@ rules:
     resources: ["shardmanageddatabases/status"]
     verbs: ["get", "patch", "update"]
 
-  # ConfigMaps — topology management
+  # ConfigMaps -- topology management
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
-  # PVCs — monitoring disk usage
+  # PVCs -- monitoring disk usage
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "watch"]
 
-  # Nodes/proxy — kubelet stats for PVC usage metrics
+  # Nodes/proxy -- kubelet stats for PVC usage metrics
   - apiGroups: [""]
     resources: ["nodes/proxy"]
     verbs: ["get"]
 
-  # Pods — needed for exec (pg_dump, psql) during migration
+  # Pods -- needed for exec (pg_dump, psql) during migration
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
@@ -36,12 +36,12 @@ rules:
     resources: ["pods/exec"]
     verbs: ["create"]
 
-  # Secrets — CNPG connection credentials
+  # Secrets -- CNPG connection credentials
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]
 
-  # Events — emit Kubernetes events
+  # Events -- emit Kubernetes events
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
@@ -49,12 +49,12 @@ rules:
     resources: ["events"]
     verbs: ["create", "patch"]
 
-  # CloudNativePG Cluster CRs — lifecycle management
+  # CloudNativePG Cluster CRs -- lifecycle management
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
-  # Leases — leader election
+  # Leases -- leader election
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
