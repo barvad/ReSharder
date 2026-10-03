@@ -55,6 +55,28 @@ public partial class V1Alpha1ShardManagedDatabase
         /// </summary>
         [JsonPropertyName("cleaningTimeoutSeconds")]
         public int CleaningTimeoutSeconds { get; set; } = 120;
+
+        /// <summary>
+        /// Maximum seconds to wait in Draining step before triggering rollback
+        /// if lag does not drop to zero. Prevents writes staying blocked indefinitely.
+        /// Default: 60 seconds.
+        /// </summary>
+        [JsonPropertyName("drainTimeoutSeconds")]
+        public int DrainTimeoutSeconds { get; set; } = 60;
+
+        /// <summary>
+        /// Maximum total seconds allowed for a shard migration from start to finish.
+        /// Default: 600 seconds (10 minutes).
+        /// </summary>
+        [JsonPropertyName("migrationTimeoutSeconds")]
+        public int MigrationTimeoutSeconds { get; set; } = 600;
+
+        /// <summary>
+        /// Maximum consecutive retries for migration steps before triggering rollback.
+        /// Default: 3.
+        /// </summary>
+        [JsonPropertyName("maxMigrationRetries")]
+        public int MaxMigrationRetries { get; set; } = 3;
     }
 
     public class V1Alpha1Status
@@ -117,6 +139,24 @@ public class ActiveMigrationState
     /// </summary>
     [JsonPropertyName("maintenanceSetAt")]
     public DateTime? MaintenanceSetAt { get; set; }
+
+    /// <summary>
+    /// UTC timestamp when the migration was initiated.
+    /// </summary>
+    [JsonPropertyName("startedAt")]
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Consecutive failure / retry count for current step.
+    /// </summary>
+    [JsonPropertyName("retryCount")]
+    public int RetryCount { get; set; }
+
+    /// <summary>
+    /// Last error message encountered during migration, if any.
+    /// </summary>
+    [JsonPropertyName("lastError")]
+    public string? LastError { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

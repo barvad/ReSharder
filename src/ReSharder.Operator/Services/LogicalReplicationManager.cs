@@ -201,6 +201,33 @@ public sealed class LogicalReplicationManager(
         logger.LogInformation("Database {Db} dropped from {Source}.", handle.ShardName, handle.SourceInstance);
     }
 
+    /// <summary>
+    /// Drops the incomplete shard database from the target instance during rollback.
+    /// Terminates any stray connections first.
+    /// </summary>
+    public async Task DropTargetDatabaseAsync(ReplicationHandle handle, CancellationToken ct)
+    {
+        logger.LogInformation(
+            "Dropping database {Db} from target instance {Target} (rollback).",
+            handle.ShardName, handle.TargetInstance);
+
+        await SafeExecute(async () =>
+        {
+            await pg.ExecuteSqlAsync(handle.TargetInstance, handle.Namespace, "postgres",
+                $"""
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = '{handle.ShardName}' AND pid <> pg_backend_pid();
+                """, ct);
+
+            await pg.ExecuteSqlAsync(handle.TargetInstance, handle.Namespace, "postgres",
+                $"DROP DATABASE IF EXISTS \"{handle.ShardName}\";", ct);
+        }, "Drop target database");
+
+        logger.LogInformation("Target database {Db} dropped from {Target} during rollback.",
+            handle.ShardName, handle.TargetInstance);
+    }
+
     private async Task SafeExecute(Func<Task> action, string stepName)
     {
         try

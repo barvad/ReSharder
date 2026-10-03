@@ -114,6 +114,31 @@ spec:
                     Maximum seconds to wait in Cleaning phase for disk space
                     to drop below maxShardSize after dropping source databases.
                     Default: 120.
+                drainTimeoutSeconds:
+                  type: integer
+                  format: int32
+                  default: 60
+                  minimum: 10
+                  description: >-
+                    Maximum seconds to wait in Draining step before triggering
+                    rollback if lag does not drop to zero. Prevents writes
+                    staying blocked indefinitely. Default: 60.
+                migrationTimeoutSeconds:
+                  type: integer
+                  format: int32
+                  default: 600
+                  minimum: 60
+                  description: >-
+                    Maximum total seconds allowed for a shard migration from
+                    start to finish before rolling back. Default: 600 (10 minutes).
+                maxMigrationRetries:
+                  type: integer
+                  format: int32
+                  default: 3
+                  minimum: 1
+                  description: >-
+                    Maximum consecutive retries for migration steps before
+                    triggering rollback. Default: 3.
             status:
               type: object
               properties:
@@ -181,6 +206,18 @@ spec:
                       description: >-
                         UTC timestamp when Maintenance was applied on the
                         topology ConfigMap. Used to enforce drain wait.
+                    startedAt:
+                      type: string
+                      format: date-time
+                      description: UTC timestamp when the migration was initiated.
+                    retryCount:
+                      type: integer
+                      format: int32
+                      default: 0
+                      description: Consecutive failure count for current migration step.
+                    lastError:
+                      type: string
+                      description: Last error encountered during migration, if any.
                 cleaning:
                   type: object
                   description: >-

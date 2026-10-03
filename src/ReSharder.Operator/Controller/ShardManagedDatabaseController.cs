@@ -142,6 +142,17 @@ public sealed class ShardManagedDatabaseController(
             // Restore all shards to Active with new connection info.
             await EnsureTopologyConfigMap(entity, ct);
         }
+        else if (result == MigrationStepResult.Failed)
+        {
+            logger.LogWarning(
+                "Migration failed and was rolled back for source instance {Instance}. Transitioning to Idle.",
+                sourceInstance);
+            entity.Status.Phase = Status.PhaseIdle;
+            entity.Status.ActiveMigration = null;
+
+            // Ensure topology ConfigMap reflects reverted mapping and Active status.
+            await EnsureTopologyConfigMap(entity, ct);
+        }
 
         return entity;
     }

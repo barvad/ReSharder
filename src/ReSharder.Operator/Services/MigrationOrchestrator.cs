@@ -28,23 +28,116 @@ public sealed class MigrationOrchestrator(
     {
         var migration = entity.Status.ActiveMigration;
 
-        if (migration is null || migration.Step == MigrationStep.NotStarted)
-            return await StartReplication(entity, plan, ct);
+        // Check overall migration timeout for pre-cutover steps.
+        if (migration is not null && migration.Step is not (MigrationStep.CaughtUp or MigrationStep.CutoverDone))
+        {
+            var totalElapsed = DateTime.UtcNow - migration.StartedAt;
+            var migrationTimeout = TimeSpan.FromSeconds(entity.Spec.MigrationTimeoutSeconds);
+            if (totalElapsed >= migrationTimeout)
+            {
+                migration.LastError = $"Total migration timeout ({entity.Spec.MigrationTimeoutSeconds}s) exceeded.";
+                logger.LogError(
+                    "Migration timed out after {Elapsed:F0}s (max allowed {Max}s). Initiating rollback.",
+                    totalElapsed.TotalSeconds, migrationTimeout.TotalSeconds);
+                await RollbackMigrationAsync(entity, ct);
+                return MigrationStepResult.Failed;
+            }
+        }
 
-        if (migration.Step == MigrationStep.Replicating)
-            return await CheckReplicationProgress(entity, ct);
+        try
+        {
+            if (migration is null || migration.Step == MigrationStep.NotStarted)
+                return await StartReplication(entity, plan, ct);
 
-        if (migration.Step == MigrationStep.Draining)
-            return await CheckDrainComplete(entity, ct);
+            if (migration.Step == MigrationStep.Replicating)
+                return await CheckReplicationProgress(entity, ct);
 
-        if (migration.Step == MigrationStep.CaughtUp)
-            return await PerformCutover(entity, ct);
+            if (migration.Step == MigrationStep.Draining)
+                return await CheckDrainComplete(entity, ct);
 
-        if (migration.Step == MigrationStep.CutoverDone)
-            return await CleanupMigration(entity, ct);
+            if (migration.Step == MigrationStep.CaughtUp)
+                return await PerformCutover(entity, ct);
 
-        logger.LogWarning("Unknown migration step {Step}.", migration?.Step);
-        return MigrationStepResult.Continue;
+            if (migration.Step == MigrationStep.CutoverDone)
+                return await CleanupMigration(entity, ct);
+
+            logger.LogWarning("Unknown migration step {Step}.", migration?.Step);
+            return MigrationStepResult.Continue;
+        }
+        catch (Exception ex)
+        {
+            if (migration is not null)
+            {
+                migration.RetryCount++;
+                migration.LastError = ex.Message;
+
+                logger.LogWarning(ex,
+                    "Error executing migration step {Step} (attempt {Retry}/{Max}).",
+                    migration.Step, migration.RetryCount, entity.Spec.MaxMigrationRetries);
+
+                // If step is before point-of-no-return (CaughtUp), rollback when max retries exceeded.
+                if (migration.RetryCount >= entity.Spec.MaxMigrationRetries &&
+                    migration.Step is MigrationStep.NotStarted or MigrationStep.Replicating or MigrationStep.Draining)
+                {
+                    logger.LogError(
+                        "Max migration retries ({Max}) exceeded for step {Step}. Rolling back.",
+                        entity.Spec.MaxMigrationRetries, migration.Step);
+                    await RollbackMigrationAsync(entity, ct);
+                    return MigrationStepResult.Failed;
+                }
+            }
+            else
+            {
+                logger.LogError(ex, "Error starting migration.");
+            }
+
+            return MigrationStepResult.Continue;
+        }
+    }
+
+    /// <summary>
+    /// Performs an orderly rollback of an incomplete migration:
+    /// tears down replication artifacts, drops target databases,
+    /// reverts shard mapping, and sets shard statuses back to Active in the topology ConfigMap.
+    /// </summary>
+    public async Task RollbackMigrationAsync(
+        V1Alpha1ShardManagedDatabase entity,
+        CancellationToken ct)
+    {
+        var migration = entity.Status.ActiveMigration;
+        if (migration is null)
+            return;
+
+        var ns = entity.Namespace();
+        logger.LogWarning(
+            "Initiating rollback for migration from {Source} to {Target} (shards: [{Shards}]). Reason: {Reason}.",
+            migration.SourceInstance,
+            migration.TargetInstance,
+            string.Join(", ", migration.ShardsInFlight),
+            migration.LastError ?? "unknown");
+
+        foreach (var shard in migration.ShardsInFlight)
+        {
+            var handle = BuildHandle(shard, migration, ns);
+
+            logger.LogInformation("Rolling back replication artifacts for shard {Shard}.", shard);
+            await replication.TeardownReplicationAsync(handle, ct);
+
+            logger.LogInformation("Dropping incomplete database on target instance for shard {Shard}.", shard);
+            await replication.DropTargetDatabaseAsync(handle, ct);
+
+            // Revert mapping back to source instance.
+            entity.Status.ShardMapping[shard] = migration.SourceInstance;
+        }
+
+        // Restore shard status in the topology ConfigMap to Active.
+        if (SetShardTopologyStatus is not null)
+        {
+            await SetShardTopologyStatus(migration.ShardsInFlight, "Active", ct);
+        }
+
+        logger.LogInformation("Rollback completed for shards [{Shards}].",
+            string.Join(", ", migration.ShardsInFlight));
     }
 
     /// <summary>
@@ -77,6 +170,7 @@ public sealed class MigrationOrchestrator(
             SourceInstance = plan.SourceInstance,
             TargetInstance = plan.TargetInstance!,
             ShardsInFlight = handles,
+            StartedAt = DateTime.UtcNow,
         };
 
         return MigrationStepResult.Continue;
@@ -119,6 +213,7 @@ public sealed class MigrationOrchestrator(
 
             migration.Step = MigrationStep.Draining;
             migration.MaintenanceSetAt = DateTime.UtcNow;
+            migration.RetryCount = 0;
         }
 
         return MigrationStepResult.Continue;
@@ -133,9 +228,22 @@ public sealed class MigrationOrchestrator(
         var ns = entity.Namespace();
         var migration = entity.Status.ActiveMigration!;
         var drainWait = TimeSpan.FromSeconds(entity.Spec.DrainWaitSeconds);
+        var drainTimeout = TimeSpan.FromSeconds(entity.Spec.DrainTimeoutSeconds);
+
+        var elapsed = DateTime.UtcNow - (migration.MaintenanceSetAt ?? DateTime.UtcNow);
+
+        // Check drain timeout to ensure writes are not blocked indefinitely.
+        if (elapsed >= drainTimeout)
+        {
+            migration.LastError = $"Drain timeout ({entity.Spec.DrainTimeoutSeconds}s) exceeded. Replication lag did not reach zero.";
+            logger.LogError(
+                "Drain timeout exceeded for shards [{Shards}]. Lag failed to reach zero within {Timeout}s. Rolling back to avoid write denial.",
+                string.Join(", ", migration.ShardsInFlight), drainTimeout.TotalSeconds);
+            await RollbackMigrationAsync(entity, ct);
+            return MigrationStepResult.Failed;
+        }
 
         // Enforce drain wait period.
-        var elapsed = DateTime.UtcNow - (migration.MaintenanceSetAt ?? DateTime.UtcNow);
         if (elapsed < drainWait)
         {
             logger.LogInformation(
@@ -164,6 +272,7 @@ public sealed class MigrationOrchestrator(
         {
             logger.LogInformation("All shards at zero lag after drain. Transitioning to CaughtUp.");
             migration.Step = MigrationStep.CaughtUp;
+            migration.RetryCount = 0;
         }
         else
         {
@@ -193,6 +302,7 @@ public sealed class MigrationOrchestrator(
         }
 
         migration.Step = MigrationStep.CutoverDone;
+        migration.RetryCount = 0;
         return MigrationStepResult.Continue;
     }
 
@@ -230,4 +340,5 @@ public enum MigrationStepResult
 {
     Continue,
     Completed,
+    Failed,
 }
