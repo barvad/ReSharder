@@ -18,11 +18,13 @@ using Status = V1Alpha1ShardManagedDatabase.V1Alpha1Status;
 [EntityRbac(typeof(V1Alpha1ShardManagedDatabase), Verbs = RbacVerb.All)]
 [EntityRbac(typeof(V1ConfigMap), Verbs = RbacVerb.Get | RbacVerb.List | RbacVerb.Create | RbacVerb.Update | RbacVerb.Patch | RbacVerb.Delete)]
 [EntityRbac(typeof(V1Secret), Verbs = RbacVerb.Get | RbacVerb.List)]
+[EntityRbac(typeof(Corev1Event), Verbs = RbacVerb.Create | RbacVerb.Patch)]
 public sealed class ShardManagedDatabaseController(
     IKubernetesClient client,
     CnpgClusterManager cnpg,
     PvcMonitor pvcMonitor,
     MigrationOrchestrator migrationOrchestrator,
+    KubernetesEventPublisher eventPublisher,
     ILogger<ShardManagedDatabaseController> logger)
     : IEntityController<V1Alpha1ShardManagedDatabase>
 {
@@ -139,6 +141,12 @@ public sealed class ShardManagedDatabaseController(
                 StartedAt = DateTime.UtcNow,
             };
 
+            await eventPublisher.PublishEventAsync(
+                entity,
+                KubernetesEventPublisher.ReasonCutoverCompleted,
+                $"Cutover completed for shards [{string.Join(", ", plan.ShardsToMove)}] to instance {plan.TargetInstance}.",
+                ct: ct);
+
             // Restore all shards to Active with new connection info.
             await EnsureTopologyConfigMap(entity, ct);
         }
@@ -197,6 +205,12 @@ public sealed class ShardManagedDatabaseController(
                 cleaning.Instance,
                 usage.UsedBytes / (1024 * 1024),
                 maxBytes / (1024 * 1024));
+
+            await eventPublisher.PublishEventAsync(
+                entity,
+                KubernetesEventPublisher.ReasonCleaningCompleted,
+                $"Disk space reclaimed on instance {cleaning.Instance} below maxShardSize.",
+                ct: ct);
 
             entity.Status.Cleaning = null;
             entity.Status.Phase = Status.PhaseIdle;
@@ -373,6 +387,12 @@ public sealed class ShardManagedDatabaseController(
         logger.LogInformation(
             "Split initiated. Phase set to Migrating. Next reconcile will start replication.");
 
+        await eventPublisher.PublishEventAsync(
+            entity,
+            KubernetesEventPublisher.ReasonSplitStarted,
+            $"Splitting instance {plan.SourceInstance} -> creating {plan.TargetInstance} to migrate shards [{string.Join(", ", plan.ShardsToMove)}].",
+            ct: ct);
+
         return entity;
     }
 
@@ -388,6 +408,12 @@ public sealed class ShardManagedDatabaseController(
             plan.SourceInstance, StorageScaleIncrement);
 
         await cnpg.ScaleStorageAsync(plan.SourceInstance, ns, StorageScaleIncrement, ct);
+
+        await eventPublisher.PublishEventAsync(
+            entity,
+            KubernetesEventPublisher.ReasonStorageScaledUp,
+            $"Single-shard instance {plan.SourceInstance} storage scaled up by +{StorageScaleIncrement}.",
+            ct: ct);
 
         logger.LogInformation("Scale-up complete for instance {Instance}.", plan.SourceInstance);
     }

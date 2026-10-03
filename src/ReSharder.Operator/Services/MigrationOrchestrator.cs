@@ -15,6 +15,7 @@ namespace ReSharder.Operator.Services;
 /// </summary>
 public sealed class MigrationOrchestrator(
     LogicalReplicationManager replication,
+    KubernetesEventPublisher eventPublisher,
     ILogger<MigrationOrchestrator> logger)
 {
     /// <summary>
@@ -136,6 +137,13 @@ public sealed class MigrationOrchestrator(
             await SetShardTopologyStatus(migration.ShardsInFlight, "Active", ct);
         }
 
+        await eventPublisher.PublishEventAsync(
+            entity,
+            KubernetesEventPublisher.ReasonMigrationRolledBack,
+            $"Migration rolled back for shards [{string.Join(", ", migration.ShardsInFlight)}]. Reason: {migration.LastError ?? "unknown"}.",
+            KubernetesEventPublisher.TypeWarning,
+            ct);
+
         logger.LogInformation("Rollback completed for shards [{Shards}].",
             string.Join(", ", migration.ShardsInFlight));
     }
@@ -210,6 +218,12 @@ public sealed class MigrationOrchestrator(
             // Set shards to Maintenance in the topology ConfigMap.
             if (SetShardTopologyStatus is not null)
                 await SetShardTopologyStatus(migration.ShardsInFlight, "Maintenance", ct);
+
+            await eventPublisher.PublishEventAsync(
+                entity,
+                KubernetesEventPublisher.ReasonDrainStarted,
+                $"All shards within lag threshold. Shards [{string.Join(", ", migration.ShardsInFlight)}] switched to Maintenance mode for write draining.",
+                ct: ct);
 
             migration.Step = MigrationStep.Draining;
             migration.MaintenanceSetAt = DateTime.UtcNow;

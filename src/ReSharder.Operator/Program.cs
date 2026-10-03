@@ -20,6 +20,9 @@ builder.Services.AddSingleton<PvcMonitor>();
 builder.Services.AddSingleton<PostgresExecutor>();
 builder.Services.AddSingleton<LogicalReplicationManager>();
 builder.Services.AddSingleton<MigrationOrchestrator>();
+builder.Services.AddSingleton<KubernetesEventPublisher>();
+
+builder.Services.AddHostedService<OperatorHealthService>();
 
 builder.Services
     .AddKubernetesOperator()
