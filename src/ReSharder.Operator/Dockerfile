@@ -16,4 +16,6 @@ USER appuser
 
 COPY --from=build /app .
 
+EXPOSE 8080
+
 ENTRYPOINT ["dotnet", "ReSharder.Operator.dll"]
