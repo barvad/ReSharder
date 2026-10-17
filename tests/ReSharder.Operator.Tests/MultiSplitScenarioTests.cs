@@ -9,6 +9,7 @@ namespace ReSharder.Operator.Tests;
 /// </summary>
 public class MultiSplitScenarioTests
 {
+    private readonly IShardSplitPlanner planner = new ShardSplitPlanner();
     [Fact]
     public void AfterFirstSplit_Instance2_CanBeSplitFurther()
     {
@@ -26,10 +27,10 @@ public class MultiSplitScenarioTests
             ["s8"] = "smd-instance-db-2",
         };
 
-        var newName = ShardSplitPlanner.GenerateNextInstanceName(
-            "db", mapping.Values.Distinct());
+        var newName = planner.GenerateNextInstanceName(
+            "db", mapping.Values.Distinct(), []);
 
-        var plan = ShardSplitPlanner.PlanSplit("smd-instance-db-2", mapping, newName);
+        var plan = planner.PlanSplit("smd-instance-db-2", mapping, newName);
 
         Assert.Equal(SplitAction.Split, plan.Action);
         Assert.Equal("smd-instance-db-2", plan.SourceInstance);
@@ -63,10 +64,10 @@ public class MultiSplitScenarioTests
             ["s8"] = "smd-instance-db-3",
         };
 
-        var newName = ShardSplitPlanner.GenerateNextInstanceName(
-            "db", mapping.Values.Distinct());
+        var newName = planner.GenerateNextInstanceName(
+            "db", mapping.Values.Distinct(), []);
 
-        var plan = ShardSplitPlanner.PlanSplit("smd-instance-db-1", mapping, newName);
+        var plan = planner.PlanSplit("smd-instance-db-1", mapping, newName);
 
         Assert.Equal(SplitAction.Split, plan.Action);
         Assert.Equal("smd-instance-db-1", plan.SourceInstance);
@@ -93,7 +94,7 @@ public class MultiSplitScenarioTests
 
         foreach (var instance in mapping.Values.Distinct())
         {
-            var plan = ShardSplitPlanner.PlanSplit(instance, mapping, "unused");
+            var plan = planner.PlanSplit(instance, mapping, "unused");
             Assert.Equal(SplitAction.ScaleUp, plan.Action);
             Assert.Equal(instance, plan.SourceInstance);
         }
@@ -111,7 +112,7 @@ public class MultiSplitScenarioTests
             "smd-instance-db-5", // gap -- e.g. 3 and 4 were deleted
         };
 
-        var next = ShardSplitPlanner.GenerateNextInstanceName("db", existing);
+        var next = planner.GenerateNextInstanceName("db", existing, []);
         Assert.Equal("smd-instance-db-6", next);
     }
 
@@ -129,7 +130,7 @@ public class MultiSplitScenarioTests
         };
 
         // Split instance-2 only
-        var plan = ShardSplitPlanner.PlanSplit(
+        var plan = planner.PlanSplit(
             "smd-instance-db-2", mapping, "smd-instance-db-4");
 
         // Only s3/s4 are involved -- s1,s2,s5,s6 untouched

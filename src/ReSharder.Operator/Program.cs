@@ -21,6 +21,7 @@ builder.Services.AddSingleton<PostgresExecutor>();
 builder.Services.AddSingleton<LogicalReplicationManager>();
 builder.Services.AddSingleton<MigrationOrchestrator>();
 builder.Services.AddSingleton<KubernetesEventPublisher>();
+builder.Services.AddSingleton<IShardSplitPlanner, ShardSplitPlanner>();
 
 builder.Services.AddHostedService<OperatorHealthService>();
 

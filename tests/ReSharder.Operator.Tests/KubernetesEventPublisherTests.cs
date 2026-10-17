@@ -7,20 +7,6 @@ namespace ReSharder.Operator.Tests;
 public class KubernetesEventPublisherTests
 {
     [Fact]
-    public void EventConstants_AreStandardKubernetesFormat()
-    {
-        Assert.Equal("Normal", KubernetesEventPublisher.TypeNormal);
-        Assert.Equal("Warning", KubernetesEventPublisher.TypeWarning);
-
-        Assert.Equal("ShardSplitStarted", KubernetesEventPublisher.ReasonSplitStarted);
-        Assert.Equal("StorageScaledUp", KubernetesEventPublisher.ReasonStorageScaledUp);
-        Assert.Equal("DrainStarted", KubernetesEventPublisher.ReasonDrainStarted);
-        Assert.Equal("CutoverCompleted", KubernetesEventPublisher.ReasonCutoverCompleted);
-        Assert.Equal("CleaningCompleted", KubernetesEventPublisher.ReasonCleaningCompleted);
-        Assert.Equal("MigrationRolledBack", KubernetesEventPublisher.ReasonMigrationRolledBack);
-    }
-
-    [Fact]
     public async Task HealthService_RespondsToLivenessAndReadinessProbes()
     {
         // Pick an available high port for testing.

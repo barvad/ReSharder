@@ -77,6 +77,9 @@ public partial class V1Alpha1ShardManagedDatabase
         /// </summary>
         [JsonPropertyName("maxMigrationRetries")]
         public int MaxMigrationRetries { get; set; } = 3;
+
+        [JsonPropertyName("diskUsageThresholdPercent")]
+        public int DiskUsageThresholdPercent { get; set; } = 80;
     }
 
     public class V1Alpha1Status

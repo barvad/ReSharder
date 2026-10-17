@@ -25,6 +25,7 @@ public sealed class ShardManagedDatabaseController(
     PvcMonitor pvcMonitor,
     MigrationOrchestrator migrationOrchestrator,
     KubernetesEventPublisher eventPublisher,
+    IShardSplitPlanner shardSplitPlanner,
     ILogger<ShardManagedDatabaseController> logger)
     : IEntityController<V1Alpha1ShardManagedDatabase>
 {
@@ -45,6 +46,35 @@ public sealed class ShardManagedDatabaseController(
         logger.LogInformation(
             "Reconciling ShardManagedDatabase {Namespace}/{Name}, generation={Generation}, phase={Phase}.",
             ns, name, entity.Metadata.Generation, entity.Status.Phase);
+
+        // Validate user-specified shard count in the CRD: if the user provided a
+        // explicit list of shards, its length must be a power of two. If not,
+        // report an event and requeue without making changes.
+        var requestedShards = entity.Spec?.Shards?.Count ?? 0;
+        if (requestedShards > 0 && !IsPowerOfTwo(requestedShards))
+        {
+            var msg = $"Invalid spec: number of shards ({requestedShards}) is not a power of two. " +
+                      "Please provide 1,2,4,8,... shards.";
+            logger.LogError(msg);
+            try
+            {
+                await eventPublisher.PublishEventAsync(
+                    entity,
+                    "InvalidSpec",
+                    msg,
+                    ct: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to publish InvalidSpec event.");
+            }
+
+            // Update observed generation so the user sees the validation reflected
+            // in the status and avoid repeatedly re-initializing resources.
+            entity.Status.ObservedGeneration = entity.Metadata.Generation;
+            entity = await client.UpdateStatusAsync(entity, cancellationToken);
+            return ReconciliationResult<V1Alpha1ShardManagedDatabase>.Success(entity, requeueAfter: RequeueInterval);
+        }
 
         // Handle active migration (Migrating phase).
         if (entity.Status.Phase == Status.PhaseMigrating)
@@ -276,6 +306,12 @@ public sealed class ShardManagedDatabaseController(
             await cnpg.EnsureClusterAsync(
                 instanceName, ns, entity.Spec.InitialStorageSize, entity, ct);
         }
+
+        }
+
+    private static bool IsPowerOfTwo(int n)
+    {
+        return n > 0 && (n & (n - 1)) == 0;
     }
 
     // -- Split / Scale-Up Trigger --
@@ -313,35 +349,54 @@ public sealed class ShardManagedDatabaseController(
                 continue;
             }
 
+            var thresholdBytes = (long)(maxBytes * (entity.Spec.DiskUsageThresholdPercent / 100.0));
+            
             logger.LogInformation(
-                "Instance {Instance}: used={UsedMi}Mi, capacity={CapMi}Mi, threshold={ThreshMi}Mi.",
+                "Instance {Instance}: used={UsedMi}Mi, capacity={CapMi}Mi, threshold={ThreshMi}Mi (at {Percent}% of maxShardSize).",
                 instanceName,
                 usage.UsedBytes / (1024 * 1024),
                 usage.CapacityBytes / (1024 * 1024),
-                maxBytes / (1024 * 1024));
+                thresholdBytes / (1024 * 1024),
+                entity.Spec.DiskUsageThresholdPercent);
 
-            if (usage.UsedBytes < maxBytes)
+            if (usage.UsedBytes < thresholdBytes)
                 continue;
 
             logger.LogWarning(
-                "Instance {Instance} exceeds maxShardSize ({Used} >= {Max}). Planning split.",
-                instanceName, usage.UsedBytes, maxBytes);
+                "Instance {Instance} exceeds disk usage threshold ({Used} >= {Thresh} at {Percent}% of maxShardSize). Planning split.",
+                instanceName, usage.UsedBytes, thresholdBytes, entity.Spec.DiskUsageThresholdPercent);
 
-            var plan = ShardSplitPlanner.PlanSplit(
+            // Plan the split first to know which shards will be moved
+            var initialPlan = shardSplitPlanner.PlanSplit(
                 instanceName,
                 entity.Status.ShardMapping,
-                ShardSplitPlanner.GenerateNextInstanceName(
-                    entity.Name(), entity.Status.ShardMapping.Values.Distinct()));
+                ""); // Temporary name, will be replaced
+            
+            // If we need to scale up, do it directly
+            if (initialPlan.Action == SplitAction.ScaleUp)
+            {
+                await ExecuteScaleUp(entity, initialPlan, ct);
+                return entity;
+            }
+            
+            // For split action, generate the actual instance name based on the shards to be moved
+            var actualPlan = shardSplitPlanner.PlanSplit(
+                instanceName,
+                entity.Status.ShardMapping,
+                shardSplitPlanner.GenerateNextInstanceName(
+                    entity.Name(), 
+                    entity.Status.ShardMapping.Values.Distinct(),
+                    initialPlan.ShardsToMove));
 
-            switch (plan.Action)
+            switch (actualPlan.Action)
             {
                 case SplitAction.Split:
-                    entity = await ExecuteSplitPlan(entity, plan, ct);
+                    entity = await ExecuteSplitPlan(entity, actualPlan, ct);
                     // Return immediately -- one split at a time.
                     return entity;
 
                 case SplitAction.ScaleUp:
-                    await ExecuteScaleUp(entity, plan, ct);
+                    await ExecuteScaleUp(entity, actualPlan, ct);
                     // Return immediately -- one action at a time.
                     return entity;
             }

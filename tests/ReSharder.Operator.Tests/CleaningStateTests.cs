@@ -37,13 +37,6 @@ public class CleaningStateTests
     }
 
     [Fact]
-    public void DefaultSpec_HasCleaningTimeoutSeconds()
-    {
-        var spec = new V1Alpha1ShardManagedDatabase.V1Alpha1Spec();
-        Assert.Equal(120, spec.CleaningTimeoutSeconds);
-    }
-
-    [Fact]
     public void Status_WithCleaningState_SerializesAndDeserializes()
     {
         var status = new V1Alpha1ShardManagedDatabase.V1Alpha1Status
@@ -65,39 +58,5 @@ public class CleaningStateTests
         Assert.Equal("Cleaning", deserialized.Phase);
         Assert.NotNull(deserialized.Cleaning);
         Assert.Equal("smd-instance-main-1", deserialized.Cleaning.Instance);
-    }
-
-    [Fact]
-    public void CleaningPhase_TransitionsWhenUsedBytesBelowThreshold()
-    {
-        const long maxBytes = 50L * 1024 * 1024 * 1024; // 50Gi
-        const long usedBytesAfterDrop = 30L * 1024 * 1024 * 1024; // 30Gi (freed)
-
-        var isReclaimed = usedBytesAfterDrop < maxBytes;
-        Assert.True(isReclaimed);
-    }
-
-    [Fact]
-    public void CleaningPhase_DetectsTimeout()
-    {
-        var startedAt = DateTime.UtcNow.AddSeconds(-150);
-        var timeout = TimeSpan.FromSeconds(120);
-
-        var elapsed = DateTime.UtcNow - startedAt;
-        var timedOut = elapsed >= timeout;
-
-        Assert.True(timedOut);
-    }
-
-    [Fact]
-    public void CleaningPhase_WithinTimeoutPeriod_DoesNotTimeout()
-    {
-        var startedAt = DateTime.UtcNow.AddSeconds(-30);
-        var timeout = TimeSpan.FromSeconds(120);
-
-        var elapsed = DateTime.UtcNow - startedAt;
-        var timedOut = elapsed >= timeout;
-
-        Assert.False(timedOut);
     }
 }

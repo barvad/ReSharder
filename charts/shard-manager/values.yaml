@@ -34,3 +34,11 @@ operator:
 
   # -- Tolerations for operator pods.
   tolerations: []
+
+# -- Configuration for disk usage and shard management behavior.
+diskManagement:
+  # -- Percentage of maxShardSize to trigger a shard split.
+  # When disk usage reaches this percentage of maxShardSize,
+  # the operator will split shards to prevent full disk.
+  # Range: 1-99, Default: 80
+  usageThresholdPercent: 80

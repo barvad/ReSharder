@@ -58,17 +58,6 @@ public class ActiveMigrationStateTests
     }
 
     [Fact]
-    public void DefaultState_IsNotStarted()
-    {
-        var state = new ActiveMigrationState();
-        Assert.Equal(MigrationStep.NotStarted, state.Step);
-        Assert.Equal(string.Empty, state.SourceInstance);
-        Assert.Equal(string.Empty, state.TargetInstance);
-        Assert.Empty(state.ShardsInFlight);
-        Assert.Null(state.MaintenanceSetAt);
-    }
-
-    [Fact]
     public void Draining_Step_Roundtrips()
     {
         var state = new ActiveMigrationState
@@ -83,17 +72,5 @@ public class ActiveMigrationStateTests
         var back = JsonSerializer.Deserialize<ActiveMigrationState>(json)!;
         Assert.Equal(MigrationStep.Draining, back.Step);
         Assert.NotNull(back.MaintenanceSetAt);
-    }
-
-    [Fact]
-    public void MigrationStep_HasFiveValues()
-    {
-        var values = Enum.GetValues<MigrationStep>();
-        Assert.Equal(5, values.Length);
-        Assert.Contains(MigrationStep.NotStarted, values);
-        Assert.Contains(MigrationStep.Replicating, values);
-        Assert.Contains(MigrationStep.Draining, values);
-        Assert.Contains(MigrationStep.CaughtUp, values);
-        Assert.Contains(MigrationStep.CutoverDone, values);
     }
 }

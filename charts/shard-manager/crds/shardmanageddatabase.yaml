@@ -139,6 +139,18 @@ spec:
                   description: >-
                     Maximum consecutive retries for migration steps before
                     triggering rollback. Default: 3.
+                diskUsageThresholdPercent:
+                  type: integer
+                  format: int32
+                  default: 80
+                  minimum: 1
+                  maximum: 99
+                  description: >-
+                    Percentage of maxShardSize to trigger a shard split.
+                    When disk usage reaches this percentage of maxShardSize,
+                    the operator will split shards to prevent full disk.
+                    Default: 80 (triggers split at 80% of maxShardSize).
+                  example: 80
             status:
               type: object
               properties:
