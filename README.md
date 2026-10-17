@@ -1,6 +1,9 @@
 # ReSharder
 
-Dynamic PostgreSQL shard management operator for Kubernetes.
+
+![build](https://img.shields.io/badge/build-pending-lightgrey) ![license](https://img.shields.io/badge/license-MIT-blue)
+
+Operator for gradual and safe PostgreSQL sharding in Kubernetes — start small and scale as data grows.
 
 ReSharder automates horizontal scaling of PostgreSQL databases in Kubernetes clusters. It dynamically manages logical database shards across [CloudNativePG](https://cloudnative-pg.io/) (CNPG) instances, splitting them automatically when disk usage approaches configurable thresholds.
 
@@ -182,7 +185,68 @@ data:
 
 Applications mount this ConfigMap (or watch it via Spring Cloud Kubernetes, Kubernetes client, or Viper) to route queries to the correct host and pause writes when `status == Maintenance`.
 
+
 ---
+
+## Quick Start
+
+Basic steps to verify the operator locally and example configuration.
+
+1) Prerequisites:
+
+```bash
+# Install CloudNativePG (CNPG)
+kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.25.0.yaml
+
+# Ensure Helm 3 and .NET 10 SDK are installed
+```
+
+2) Install the operator via Helm:
+
+```bash
+helm install shard-manager ./charts/shard-manager \
+  --namespace resharder-system \
+  --create-namespace
+```
+
+3) Deploy the example CR (ShardManagedDatabase):
+
+```bash
+kubectl apply -f examples/sample-shardmanageddatabase.yaml
+```
+
+Minimal example CR (snippet):
+
+```yaml
+apiVersion: resharder.io/v1alpha1
+kind: ShardManagedDatabase
+metadata:
+  name: my-app-db
+  namespace: default
+spec:
+  maxShardSize: "50Gi"          # Disk usage threshold per instance
+  initialStorageSize: "10Gi"    # PVC size for new clusters
+  shards:
+    - s1
+    - s2
+    - s3
+    - s4
+  dependentDeployments:
+    - my-backend-api
+    - my-worker
+```
+
+4) Verify status and topology:
+
+```bash
+kubectl get smd
+kubectl describe smd my-app-db
+kubectl get cm app-shard-topology-my-app-db -o yaml
+kubectl get events --field-selector involvedObject.kind=ShardManagedDatabase --watch
+```
+
+PowerShell variants of the commands are supported; add a note or a Helm values example on request.
+
 
 ## Quick Start & Verification (Kind / Minikube)
 
