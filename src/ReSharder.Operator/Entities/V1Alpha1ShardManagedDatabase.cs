@@ -25,6 +25,9 @@ public partial class V1Alpha1ShardManagedDatabase
         [JsonPropertyName("initialStorageSize")]
         public string InitialStorageSize { get; set; } = string.Empty;
 
+        [JsonPropertyName("storageClass")]
+        public string? StorageClass { get; set; }
+
         [JsonPropertyName("shards")]
         public List<string> Shards { get; set; } = [];
 

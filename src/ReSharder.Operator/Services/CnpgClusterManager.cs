@@ -119,6 +119,7 @@ public sealed class CnpgClusterManager(
                 Storage = new CnpgStorageSpec
                 {
                     Size = storageSize,
+                    StorageClass = owner.Spec.StorageClass,
                     ResizeInUseVolumes = true,
                 },
                 Bootstrap = new CnpgBootstrapSpec
