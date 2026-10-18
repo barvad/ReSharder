@@ -1,0 +1,30 @@
+# Multi-stage Dockerfile to build native AOT linux-x64 binary for ReSharder.Operator
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy repository and restore
+COPY . .
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+RUN dotnet restore "src/ReSharder.Operator/ReSharder.Operator.csproj"
+
+# Publish native AOT for linux-x64
+RUN dotnet publish "src/ReSharder.Operator/ReSharder.Operator.csproj" \
+    -c Release \
+    -r linux-x64 \
+    --self-contained true \
+    -p:PublishTrimmed=true \
+    -p:TrimMode=link \
+    -p:PublishAot=true \
+    -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
+WORKDIR /app
+
+# Copy published native binary
+COPY --from=build /app/publish/ ./
+
+# Ensure executable permission for the produced binary
+RUN if [ -f ./ReSharder.Operator ]; then chmod +x ./ReSharder.Operator || true; fi
+
+ENTRYPOINT ["./ReSharder.Operator"]

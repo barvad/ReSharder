@@ -1,0 +1,51 @@
+name: Build native AOT (linux-x64)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-aot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release --verbosity normal
+
+      - name: Publish native AOT (linux-x64)
+        run: |
+          dotnet publish src/ReSharder.Operator/ReSharder.Operator.csproj \
+            -c Release \
+            -r linux-x64 \
+            --self-contained true \
+            -p:PublishTrimmed=true \
+            -p:TrimMode=link \
+            -p:PublishAot=true \
+            -o ${{ runner.temp }}/resharder-publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: resharder-operator-aot-linux-x64
+          path: ${{ runner.temp }}/resharder-publish
+
+      - name: Build Docker image (optional, reuse project Dockerfile)
+        if: always()
+        run: |
+          docker build -f src/ReSharder.Operator/Dockerfile -t ${{ github.repository_owner }}/resharder-operator:latest ./src/ReSharder.Operator || true
