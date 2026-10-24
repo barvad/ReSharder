@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Diagnostics.CodeAnalysis;
 using k8s;
 using k8s.Models;
 using KubeOps.Abstractions.Entities;
@@ -15,22 +16,10 @@ namespace ReSharder.Operator.Entities;
     ApiVersion = "v1",
     Kind = "Cluster",
     PluralName = "clusters")]
-public class CnpgCluster : IKubernetesObject<V1ObjectMeta>
+public class CnpgCluster : CustomKubernetesEntity<CnpgClusterSpec, CnpgClusterStatus>
 {
-    [JsonPropertyName("apiVersion")]
-    public string ApiVersion { get; set; } = "postgresql.cnpg.io/v1";
-
-    [JsonPropertyName("kind")]
-    public string Kind { get; set; } = "Cluster";
-
-    [JsonPropertyName("metadata")]
-    public V1ObjectMeta Metadata { get; set; } = new();
-
-    [JsonPropertyName("spec")]
-    public CnpgClusterSpec Spec { get; set; } = new();
-
-    [JsonPropertyName("status")]
-    public CnpgClusterStatus? Status { get; set; }
+    // Inherit Spec/Status/Metadata from CustomKubernetesEntity to make the
+    // type a valid KubeOps entity. Fields are modelled in separate classes.
 }
 
 public class CnpgClusterSpec
@@ -75,6 +64,7 @@ public class CnpgInitDbSpec
     public string Owner { get; set; } = "app";
 }
 
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicConstructors)]
 public class CnpgClusterStatus
 {
     [JsonPropertyName("phase")]

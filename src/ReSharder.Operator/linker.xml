@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<linker>
+  <!-- Keep only the minimal set of types required at runtime to support
+       (de)serialization of Kubernetes resources and our CRD entities.
+       This file is intentionally conservative but narrow to minimize
+       preserved surface while keeping native AOT safe. -->
+
+  <!-- Keep k8s model types used for (de)serialization of Kubernetes resources -->
+  <assembly fullname="KubernetesClient">
+    <type fullname="k8s.Models.*" preserve="all" />
+  </assembly>
+
+  <!-- Preserve YamlDotNet serializer/deserializer entrypoints only -->
+  <assembly fullname="YamlDotNet">
+    <type fullname="YamlDotNet.Serialization.Serializer" preserve="all" />
+    <type fullname="YamlDotNet.Serialization.Deserializer" preserve="all" />
+  </assembly>
+
+  <!-- Preserve our CRD entity types and controller types used by KubeOps -->
+  <assembly fullname="ReSharder.Operator">
+    <!-- Entities: list specific types used for JSON (de)serialization -->
+    <type fullname="ReSharder.Operator.Entities.V1Alpha1ShardManagedDatabase" preserve="all" />
+    <type fullname="ReSharder.Operator.Entities.CleaningState" preserve="all" />
+    <type fullname="ReSharder.Operator.Entities.ActiveMigrationState" preserve="all" />
+
+    <!-- CNPG cluster types used for typed interaction with k8s -->
+    <type fullname="ReSharder.Operator.Entities.CnpgCluster" preserve="all" />
+    <type fullname="ReSharder.Operator.Entities.CnpgClusterSpec" preserve="all" />
+    <type fullname="ReSharder.Operator.Entities.CnpgStorageSpec" preserve="all" />
+    <type fullname="ReSharder.Operator.Entities.CnpgBootstrapSpec" preserve="all" />
+    <type fullname="ReSharder.Operator.Entities.CnpgInitDbSpec" preserve="all" />
+    <type fullname="ReSharder.Operator.Entities.CnpgClusterStatus" preserve="all" />
+
+    <!-- Keep controller types so KubeOps can discover and instantiate them -->
+    <type fullname="ReSharder.Operator.Controller.*" preserve="all" />
+  </assembly>
+</linker>

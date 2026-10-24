@@ -8,10 +8,21 @@
     <RootNamespace>ReSharder.Operator</RootNamespace>
     <AssemblyName>ReSharder.Operator</AssemblyName>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <!-- IL trimming configuration is provided in linker.xml. Suppress assembly-level IL2104
+         warnings from third-party libraries that run their own trim analysis while
+         preserving the concrete types our app needs. This keeps diagnostics for
+         actionable RequiresUnreferencedCode (IL2026) visible but avoids noisy
+         assembly-level warnings. -->
+    <NoWarn>IL2104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="ReSharder.Operator.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Ensure the trimmer keeps types required at runtime by reflection/serialization -->
+    <TrimmerRootDescriptor Include="linker.xml" />
   </ItemGroup>
 
   <ItemGroup>

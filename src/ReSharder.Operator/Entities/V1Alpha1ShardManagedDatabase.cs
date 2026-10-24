@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Diagnostics.CodeAnalysis;
 using k8s.Models;
 using KubeOps.Abstractions.Entities;
 
@@ -8,6 +9,7 @@ namespace ReSharder.Operator.Entities;
 /// Declares a set of logical PostgreSQL databases (shards) to be dynamically
 /// distributed across CloudNativePG clusters by the ReSharder operator.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicConstructors)]
 [KubernetesEntity(
     Group = "resharder.io",
     ApiVersion = "v1alpha1",
@@ -17,6 +19,7 @@ public partial class V1Alpha1ShardManagedDatabase
     : CustomKubernetesEntity<V1Alpha1ShardManagedDatabase.V1Alpha1Spec,
                              V1Alpha1ShardManagedDatabase.V1Alpha1Status>
 {
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicConstructors)]
     public class V1Alpha1Spec
     {
         [JsonPropertyName("maxShardSize")]
@@ -85,6 +88,7 @@ public partial class V1Alpha1ShardManagedDatabase
         public int DiskUsageThresholdPercent { get; set; } = 80;
     }
 
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicConstructors)]
     public class V1Alpha1Status
     {
         [JsonPropertyName("phase")]
@@ -112,6 +116,7 @@ public partial class V1Alpha1ShardManagedDatabase
 /// Persisted state for an active cleaning phase after shard migration,
 /// stored in the CR status to survive operator restarts.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicConstructors)]
 public class CleaningState
 {
     [JsonPropertyName("instance")]
@@ -125,6 +130,7 @@ public class CleaningState
 /// Persisted state for an active shard migration, stored in the CR status.
 /// Allows the operator to resume migration after restarts.
 /// </summary>
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicConstructors)]
 public class ActiveMigrationState
 {
     [JsonPropertyName("step")]
@@ -165,7 +171,7 @@ public class ActiveMigrationState
     public string? LastError { get; set; }
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter))]
+[JsonConverter(typeof(JsonStringEnumConverter<MigrationStep>))]
 public enum MigrationStep
 {
     NotStarted,

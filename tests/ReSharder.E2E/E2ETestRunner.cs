@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Text.Json;
 using k8s.Models;
 using KubeOps.KubernetesClient;
@@ -38,7 +39,7 @@ public sealed class E2ETestRunner(
             // Step 1: Ensure CR exists and initial cluster is ready
             var cr = await EnsureShardManagedDatabaseAsync(opts, ct);
             var initialInstance = cr.Status.ShardMapping[opts.Shards[0]];
-            await WaitForPodReadyAsync(initialInstance, opts.Namespace, ct);
+            await WaitForPodReadyAsync(initialInstance, opts.Namespace, opts.Timeout, ct);
 
             // Step 2: Seed baseline test data and compute checksums
             var baselines = await SeedBaselineDataAsync(initialInstance, opts, ct);
@@ -129,12 +130,11 @@ public sealed class E2ETestRunner(
         throw new TimeoutException("Timed out waiting for initial ShardManagedDatabase initialization.");
     }
 
-    private async Task WaitForPodReadyAsync(string instanceName, string ns, CancellationToken ct)
+    private async Task WaitForPodReadyAsync(string instanceName, string ns, TimeSpan timeout, CancellationToken ct)
     {
         var podName = $"{instanceName}-1";
         LogInfo($"Waiting for CNPG primary pod '{podName}' to be ready...");
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(120);
+        var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
             try
@@ -150,11 +150,10 @@ public sealed class E2ETestRunner(
             {
                 // Pod not ready yet
             }
-
             await Task.Delay(3000, ct);
         }
 
-        throw new TimeoutException($"Pod '{podName}' failed to reach ready state within 120s.");
+        throw new TimeoutException($"Pod '{podName}' failed to reach ready state within {timeout.TotalSeconds:F0}s.");
     }
 
     private async Task<Dictionary<string, ShardBaseline>> SeedBaselineDataAsync(
@@ -341,7 +340,7 @@ public sealed class E2ETestRunner(
         LogSuccess("All shards confirmed with status='Active' in topology ConfigMap.");
 
         // 2. Wait for target primary pod ready
-        await WaitForPodReadyAsync(targetInstance, opts.Namespace, ct);
+        await WaitForPodReadyAsync(targetInstance, opts.Namespace, opts.Timeout, ct);
 
         // 3. Verify each shard's checksum and row count on its current instance
         foreach (var (shard, currentInstance) in cr.Status.ShardMapping)

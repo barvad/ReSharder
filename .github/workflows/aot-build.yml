@@ -45,6 +45,13 @@ jobs:
           name: resharder-operator-aot-linux-x64
           path: ${{ runner.temp }}/resharder-publish
 
+      - name: Publish & run native-AOT serialization smoke test
+        run: |
+          dotnet publish tools/SerializationSmokeTest/SerializationSmokeTest.csproj \
+            -c Release -r linux-x64 --self-contained true -p:PublishTrimmed=true -p:TrimMode=link -p:PublishAot=true -o ${{ runner.temp }}/smoke
+          ls -la ${{ runner.temp }}/smoke
+          ${{ runner.temp }}/smoke/SerializationSmokeTest || exit 1
+
       - name: Build Docker image (optional, reuse project Dockerfile)
         if: always()
         run: |

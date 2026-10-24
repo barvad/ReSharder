@@ -87,7 +87,7 @@ public sealed class CnpgClusterManager(
         string storageSize,
         V1Alpha1ShardManagedDatabase owner)
     {
-        return new CnpgCluster
+        var cluster = new CnpgCluster
         {
             Metadata = new V1ObjectMeta
             {
@@ -132,6 +132,13 @@ public sealed class CnpgClusterManager(
                 },
             },
         };
+
+        // Ensure API type metadata is set so the Kubernetes API server recognizes
+        // the object when creating the custom resource.
+        cluster.ApiVersion = "postgresql.cnpg.io/v1";
+        cluster.Kind = "Cluster";
+
+        return cluster;
     }
 
     internal static long ParseStorageToBytes(string quantity)
