@@ -1,4 +1,5 @@
 using System.Text.Json;
+
 using ReSharder.Operator.Entities;
 
 namespace ReSharder.Operator.Tests;

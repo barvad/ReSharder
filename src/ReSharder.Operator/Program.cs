@@ -1,8 +1,10 @@
 using KubeOps.Abstractions.Crds;
 using KubeOps.Operator;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+
 using ReSharder.Operator.Services;
 
 var builder = Host.CreateApplicationBuilder(args);

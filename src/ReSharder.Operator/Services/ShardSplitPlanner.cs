@@ -1,5 +1,3 @@
-using ReSharder.Operator.Entities;
-
 namespace ReSharder.Operator.Services;
 
 /// <summary>
@@ -135,7 +133,7 @@ public sealed class ShardSplitPlanner : IShardSplitPlanner
 
         // Use the number from the first shard in the move list
         var firstShard = shardsToMove.OrderBy(s => s, StringComparer.Ordinal).First();
-        
+
         // Extract number from shard name (e.g., "s3" -> 3)
         var shardNumberStr = new string(firstShard.Skip(1).ToArray());
         if (int.TryParse(shardNumberStr, out var shardNumber))
@@ -146,13 +144,13 @@ public sealed class ShardSplitPlanner : IShardSplitPlanner
             // 2. This instance already contains the shard we're trying to move (which is wrong)
             // In either case, we should use the next available number to avoid conflicts.
             var instanceName = $"{fullPrefix}{shardNumber}";
-            
+
             // Check if this instance name already exists
             if (!existingInstances.Contains(instanceName))
             {
                 return instanceName;
             }
-            
+
             // If the instance already exists, it indicates a system inconsistency.
             // Find the next available number to avoid conflicts.
             var usedNumbers = existingInstances
@@ -163,7 +161,7 @@ public sealed class ShardSplitPlanner : IShardSplitPlanner
                     return int.TryParse(suffix, out var idx) ? idx : 0;
                 })
                 .ToHashSet();
-            
+
             // Find the smallest available number greater than all used numbers
             var maxUsed = usedNumbers.DefaultIfEmpty(0).Max();
             for (int i = maxUsed + 1; i < 1000; i++)
@@ -174,7 +172,7 @@ public sealed class ShardSplitPlanner : IShardSplitPlanner
                 }
             }
         }
-        
+
         // Fallback to sequential numbering
         var fallbackMaxIndex = existingInstances
             .Where(name => name.StartsWith(fullPrefix, StringComparison.Ordinal))
@@ -212,13 +210,13 @@ public sealed record SplitPlan
         string target,
         IReadOnlyList<string> keep,
         IReadOnlyList<string> move) => new()
-    {
-        Action = SplitAction.Split,
-        SourceInstance = source,
-        TargetInstance = target,
-        ShardsToKeep = keep,
-        ShardsToMove = move,
-    };
+        {
+            Action = SplitAction.Split,
+            SourceInstance = source,
+            TargetInstance = target,
+            ShardsToKeep = keep,
+            ShardsToMove = move,
+        };
 }
 
 public enum SplitAction

@@ -1,6 +1,8 @@
-using System.Text.Json.Serialization;
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization;
+
 using k8s.Models;
+
 using KubeOps.Abstractions.Entities;
 
 namespace ReSharder.Operator.Entities;

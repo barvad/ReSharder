@@ -1,6 +1,9 @@
 using k8s.Models;
+
 using KubeOps.KubernetesClient;
+
 using Microsoft.Extensions.Logging;
+
 using ReSharder.Operator.Entities;
 
 namespace ReSharder.Operator.Services;

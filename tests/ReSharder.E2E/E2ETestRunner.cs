@@ -1,9 +1,12 @@
 using System.Diagnostics;
-using System.Linq;
 using System.Text.Json;
+
 using k8s.Models;
+
 using KubeOps.KubernetesClient;
+
 using Microsoft.Extensions.Logging;
+
 using ReSharder.Operator.Entities;
 using ReSharder.Operator.Services;
 

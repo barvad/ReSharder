@@ -1,9 +1,12 @@
 using k8s.Models;
+
 using KubeOps.Abstractions.Rbac;
 using KubeOps.Abstractions.Reconciliation;
 using KubeOps.Abstractions.Reconciliation.Controller;
 using KubeOps.KubernetesClient;
+
 using Microsoft.Extensions.Logging;
+
 using ReSharder.Operator.Entities;
 using ReSharder.Operator.Services;
 
@@ -307,7 +310,7 @@ public sealed class ShardManagedDatabaseController(
                 instanceName, ns, entity.Spec.InitialStorageSize, entity, ct);
         }
 
-        }
+    }
 
     private static bool IsPowerOfTwo(int n)
     {
@@ -350,7 +353,7 @@ public sealed class ShardManagedDatabaseController(
             }
 
             var thresholdBytes = (long)(maxBytes * (entity.Spec.DiskUsageThresholdPercent / 100.0));
-            
+
             logger.LogInformation(
                 "Instance {Instance}: used={UsedMi}Mi, capacity={CapMi}Mi, threshold={ThreshMi}Mi (at {Percent}% of maxShardSize).",
                 instanceName,
@@ -371,20 +374,20 @@ public sealed class ShardManagedDatabaseController(
                 instanceName,
                 entity.Status.ShardMapping,
                 ""); // Temporary name, will be replaced
-            
+
             // If we need to scale up, do it directly
             if (initialPlan.Action == SplitAction.ScaleUp)
             {
                 await ExecuteScaleUp(entity, initialPlan, ct);
                 return entity;
             }
-            
+
             // For split action, generate the actual instance name based on the shards to be moved
             var actualPlan = shardSplitPlanner.PlanSplit(
                 instanceName,
                 entity.Status.ShardMapping,
                 shardSplitPlanner.GenerateNextInstanceName(
-                    entity.Name(), 
+                    entity.Name(),
                     entity.Status.ShardMapping.Values.Distinct(),
                     initialPlan.ShardsToMove));
 

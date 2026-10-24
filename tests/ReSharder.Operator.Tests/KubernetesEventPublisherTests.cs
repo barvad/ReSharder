@@ -1,5 +1,7 @@
 using System.Net;
+
 using Microsoft.Extensions.Logging.Abstractions;
+
 using ReSharder.Operator.Services;
 
 namespace ReSharder.Operator.Tests;

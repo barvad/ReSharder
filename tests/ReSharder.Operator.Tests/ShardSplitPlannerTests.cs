@@ -94,7 +94,7 @@ public class ShardSplitPlannerTests
         Assert.Contains("s1", plan.ShardsToKeep);
         Assert.Contains("s2", plan.ShardsToKeep);
     }
-    
+
     [Fact]
     public void PlanSplit_ConvergenceScenario_FirstSplit()
     {
@@ -127,7 +127,7 @@ public class ShardSplitPlannerTests
         Assert.Contains("s3", plan.ShardsToKeep);
         Assert.Contains("s4", plan.ShardsToKeep);
     }
-    
+
     [Fact]
     public void PlanSplit_ConvergenceScenario_SecondSplit()
     {
@@ -201,7 +201,7 @@ public class ShardSplitPlannerTests
         var name = planner.GenerateNextInstanceName("my-db", existing, shardsToMove);
         Assert.Equal("smd-instance-my-db-4", name);
     }
-    
+
     [Fact]
     public void GenerateNextInstanceName_WithShardsToMove_CreatesMatchingInstanceWhenAvailable()
     {
@@ -225,7 +225,7 @@ public class ShardSplitPlannerTests
     public void PlanSplit_NoShards_ReturnsScaleUp()
     {
         var mapping = new Dictionary<string, string>();
-        
+
         var plan = planner.PlanSplit("smd-instance-my-db-1", mapping, "smd-instance-my-db-2");
 
         Assert.Equal(SplitAction.ScaleUp, plan.Action);
@@ -234,7 +234,7 @@ public class ShardSplitPlannerTests
         Assert.Empty(plan.ShardsToMove);
         Assert.Empty(plan.ShardsToKeep);
     }
-    
+
     [Fact]
     public void CascadingSplit_ConvergenceScenario()
     {
@@ -268,7 +268,7 @@ public class ShardSplitPlannerTests
         Assert.Contains("s7", plan1.ShardsToMove);
         Assert.Contains("s8", plan1.ShardsToMove);
     }
-    
+
     [Fact]
     public void PlanSplit_ShardsAlreadyOnCorrectInstances_NoSplit()
     {
@@ -286,7 +286,7 @@ public class ShardSplitPlannerTests
         Assert.Equal(SplitAction.ScaleUp, plan.Action);
         Assert.Equal("smd-instance-db-1", plan.SourceInstance);
     }
-    
+
     [Fact]
     public void PlanSplit_InvalidShardName_HandlesGracefully()
     {
@@ -305,7 +305,7 @@ public class ShardSplitPlannerTests
         // Should still work, just ignore invalid shard names
         Assert.Equal(2, plan.ShardsToMove.Count);
     }
-    
+
     [Fact]
     public void PlanSplit_EmptyShardList_ReturnsScaleUp()
     {
@@ -317,7 +317,7 @@ public class ShardSplitPlannerTests
         Assert.Equal(SplitAction.ScaleUp, plan.Action);
         Assert.Equal("instance-1", plan.SourceInstance);
     }
-    
+
     [Fact]
     public void PlanSplit_AllShardsOnOtherInstances_ReturnsScaleUp()
     {

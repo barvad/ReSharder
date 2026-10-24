@@ -1,8 +1,11 @@
 using k8s.Models;
+
 using KubeOps.Abstractions.Reconciliation;
 using KubeOps.Abstractions.Reconciliation.Finalizer;
 using KubeOps.KubernetesClient;
+
 using Microsoft.Extensions.Logging;
+
 using ReSharder.Operator.Entities;
 using ReSharder.Operator.Services;
 
