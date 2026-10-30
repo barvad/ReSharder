@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
+using k8s;
 using k8s.Models;
 
 using KubeOps.Abstractions.Entities;

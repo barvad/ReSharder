@@ -1,3 +1,5 @@
+using ReSharder.Operator.Entities;
+
 namespace ReSharder.Operator.Services;
 
 /// <summary>
